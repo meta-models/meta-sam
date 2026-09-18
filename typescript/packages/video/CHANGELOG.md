@@ -1,5 +1,11 @@
 # @meta-sam/video
 
+## 0.1.5
+
+### Patch Changes
+
+- 97c6bc5: Exclude negative-timestamp decode preroll from presented video frame indexes so frame-qualified overlays remain aligned.
+
 ## 0.1.4
 
 ### Patch Changes
