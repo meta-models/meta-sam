@@ -1,0 +1,52 @@
+#!/usr/bin/env node
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+ */
+"use strict";
+
+const { resolve } = require("node:path");
+
+const { runProcess } = require("./run-process.cjs");
+const { runPythonCommands } = require("./run-python.cjs");
+const { runTypeScriptNpmScriptAndWait } = require("./run-typescript.cjs");
+
+const PYTHON_CONFORMANCE_COMMANDS = Object.freeze([
+  ["-m", "pytest", "-q", "-m", "conformance", "--no-cov"],
+]);
+
+function runCompatibilityCheck({
+  repositoryRoot = resolve(__dirname, ".."),
+  processLike = process,
+  spawnImpl,
+} = {}) {
+  return runProcess(process.execPath, ["scripts/check-compatibility.cjs"], {
+    cwd: repositoryRoot,
+    label: "Compatibility validation",
+    processLike,
+    ...(spawnImpl === undefined ? {} : { spawnImpl }),
+  });
+}
+
+async function validateConformance({
+  checkCompatibility = runCompatibilityCheck,
+  runTypeScript = runTypeScriptNpmScriptAndWait,
+  runPython = runPythonCommands,
+} = {}) {
+  const compatibilityCode = await checkCompatibility();
+  if (compatibilityCode !== 0) return compatibilityCode;
+  const typeScriptCode = await runTypeScript("conformance:check");
+  if (typeScriptCode !== 0) return typeScriptCode;
+  return runPython(PYTHON_CONFORMANCE_COMMANDS);
+}
+
+module.exports = {
+  PYTHON_CONFORMANCE_COMMANDS,
+  runCompatibilityCheck,
+  validateConformance,
+};
+
+if (require.main === module) {
+  void validateConformance().then((code) => {
+    process.exitCode = code;
+  });
+}

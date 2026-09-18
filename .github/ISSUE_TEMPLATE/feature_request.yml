@@ -1,0 +1,51 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+
+name: Feature request
+description: Propose new behavior for the client libraries.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These libraries parse and render what the SAM 3.1 Model API emits; they do not change what the API emits. Requests about model quality, prompting, or new API fields belong with the [Model API docs](https://dev.meta.ai/docs/sam/overview).
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      multiple: true
+      options:
+        - "@meta-sam/parser (npm)"
+        - "@meta-sam/graphics (npm)"
+        - "@meta-sam/video (npm)"
+        - "@meta-sam/react (npm)"
+        - "meta-sam-parser (PyPI)"
+        - "conformance corpus / protocol document"
+        - "api-playground example"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what stops you today? Concrete usage beats abstract capability.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: The API or behavior you would like, including how it should look in both TypeScript and Python when it touches the parser (the two implementations stay in lockstep and share one conformance corpus).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What you can do with the current public API, and why it falls short.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to open a pull request for this, following CONTRIBUTING.md.

@@ -1,0 +1,14 @@
+<!--
+  Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="64" viewBox="0 0 96 64" role="img" aria-labelledby="title description">
+  <title id="title">Synthetic instrument bench</title>
+  <desc id="description">A small calibration marker beside a larger rectangular sample on a neutral work surface.</desc>
+  <rect width="96" height="64" fill="#d8d5ce" />
+  <path d="M0 13.5H96M0 50.5H96" stroke="#aaa69d" stroke-width="0.5" />
+  <rect x="4" y="4" width="8" height="8" rx="1" fill="#666a70" />
+  <rect x="24" y="16" width="48" height="32" rx="2" fill="#8b8d91" />
+  <path d="M30 24H66M30 31.5H60M30 39H64" stroke="#d8d5ce" stroke-width="1.5" />
+  <circle cx="84" cy="10" r="3" fill="#b6b1a7" />
+  <path d="M80 54h10" stroke="#777b80" stroke-width="1" />
+</svg>

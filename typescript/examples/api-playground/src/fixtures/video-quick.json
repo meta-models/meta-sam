@@ -1,0 +1,50 @@
+{
+  "id": "video-quick",
+  "mediaMode": "video",
+  "title": "Quick VP9 + Opus",
+  "description": "Eight packet-exact frames with cumulative boxes and masks for fast interaction checks.",
+  "prompt": "moving bench objects",
+  "media": {
+    "url": "/media/webm-vp9-opus.webm",
+    "width": 96,
+    "height": 64
+  },
+  "events": [
+    {
+      "delayMs": 120,
+      "event": {
+        "type": "response.output_text.delta",
+        "item_id": "message-video-quick",
+        "output_index": 0,
+        "content_index": 0,
+        "delta": "<0f>0<|box;x1=4;y1=4;x2=11;y2=11;w=96;h=64|><|mask;x=0;y=0;data=8,8,!!!!!'y:Duu@D|>\n"
+      }
+    },
+    {
+      "delayMs": 160,
+      "event": {
+        "type": "response.output_text.delta",
+        "item_id": "message-video-quick",
+        "output_index": 0,
+        "content_index": 0,
+        "delta": "<4f>1<|box;x1=24;y1=16;x2=71;y2=47;w=96;h=64|><|mask;x=0;y=0;data=32,48,!!!!!(y:SktC`w|>\n"
+      }
+    },
+    {
+      "delayMs": 90,
+      "event": {
+        "type": "response.output_text.done",
+        "item_id": "message-video-quick",
+        "output_index": 0,
+        "content_index": 0,
+        "text": "<0f>0<|box;x1=4;y1=4;x2=11;y2=11;w=96;h=64|><|mask;x=0;y=0;data=8,8,!!!!!'y:Duu@D|>\n<4f>1<|box;x1=24;y1=16;x2=71;y2=47;w=96;h=64|><|mask;x=0;y=0;data=32,48,!!!!!(y:SktC`w|>\n"
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "response.completed"
+      }
+    }
+  ]
+}

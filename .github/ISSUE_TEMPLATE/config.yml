@@ -1,0 +1,13 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://bugbounty.meta.com/
+    about: Report security issues through the Meta Bug Bounty program, never as a public issue.
+  - name: SAM 3.1 Model API questions
+    url: https://dev.meta.ai/docs/sam/overview
+    about: Questions about the API itself (prompts, quotas, keys, model behavior) belong with the Model API docs and support, not this parser repository.
+  - name: Code of Conduct
+    url: https://github.com/meta-models/meta-sam/blob/main/CODE_OF_CONDUCT.md
+    about: Participation in this project is governed by the Code of Conduct.

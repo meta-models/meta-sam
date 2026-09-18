@@ -1,0 +1,26 @@
+#!/usr/bin/env node
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+ */
+"use strict";
+
+const { resolve } = require("node:path");
+
+const {
+  MATRIX_PATH,
+  writeCompatibilityMatrix,
+} = require("./compatibility-matrix.cjs");
+
+async function main() {
+  const matrix = await writeCompatibilityMatrix(resolve(__dirname, ".."));
+  const [typeScript, python] = matrix.implementations;
+  process.stdout.write(
+    `wrote ${MATRIX_PATH}: TypeScript ${typeScript.version}, Python ${python.version}, ` +
+      `${matrix.contract.corpus.case_count} cases, ${matrix.contract.identity}\n`,
+  );
+}
+
+void main().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+});

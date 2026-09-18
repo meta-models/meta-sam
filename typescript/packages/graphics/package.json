@@ -1,0 +1,43 @@
+{
+  "name": "@meta-sam/graphics",
+  "version": "0.1.9",
+  "description": "Retained Canvas 2D renderer for SAM 3 segmentation",
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://dev.meta.ai/",
+  "bugs": {
+    "url": "https://github.com/meta-models/meta-sam/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meta-models/meta-sam.git",
+    "directory": "typescript/packages/graphics"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": "^20.17.0 || >=22.9.0"
+  },
+  "dependencies": {
+    "@meta-sam/parser": "0.0.12"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "prepack": "tsc -b --force",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

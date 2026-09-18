@@ -1,0 +1,45 @@
+{
+  "name": "@meta-sam/video",
+  "version": "0.1.4",
+  "description": "Framework-neutral browser video player for SAM 3 overlays",
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://dev.meta.ai/",
+  "bugs": {
+    "url": "https://github.com/meta-models/meta-sam/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meta-models/meta-sam.git",
+    "directory": "typescript/packages/video"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "browser": "./dist/index.js",
+  "dependencies": {
+    "@types/dom-webcodecs": "0.1.19",
+    "mediabunny": "1.55.7"
+  },
+  "engines": {
+    "node": "^20.17.0 || >=22.9.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "prepack": "tsc -b --force",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

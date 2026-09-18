@@ -1,0 +1,60 @@
+{
+  "id": "video-sustained",
+  "mediaMode": "video",
+  "title": "Sustained VP9 + Opus",
+  "description": "Eight seconds and 240 authoritative presentation frames for sustained playback, packet, audio, and stats inspection.",
+  "prompt": "moving test pattern",
+  "media": {
+    "url": "/media/webm-vp9-opus-cfr30-8s.webm",
+    "width": 320,
+    "height": 180
+  },
+  "events": [
+    {
+      "delayMs": 160,
+      "event": {
+        "type": "response.output_text.delta",
+        "item_id": "message-video-sustained",
+        "output_index": 0,
+        "content_index": 0,
+        "delta": "<0f>0<|box;x1=16;y1=12;x2=127;y2=87;w=320;h=180|><|mask;x=0;y=0;data=76,112,!!!!!(y:O2*uz)|>\n"
+      }
+    },
+    {
+      "delayMs": 180,
+      "event": {
+        "type": "response.output_text.delta",
+        "item_id": "message-video-sustained",
+        "output_index": 0,
+        "content_index": 0,
+        "delta": "<120f>0<|box;x1=96;y1=48;x2=223;y2=143;w=320;h=180|><|mask;x=0;y=0;data=96,128,!!!!!(y:IwL5+V|>\n"
+      }
+    },
+    {
+      "delayMs": 180,
+      "event": {
+        "type": "response.output_text.delta",
+        "item_id": "message-video-sustained",
+        "output_index": 0,
+        "content_index": 0,
+        "delta": "<239f>0<|box;x1=184;y1=76;x2=303;y2=167;w=320;h=180|><|mask;x=0;y=0;data=92,120,!!!!!(y:MfEDUx|>\n"
+      }
+    },
+    {
+      "delayMs": 90,
+      "event": {
+        "type": "response.output_text.done",
+        "item_id": "message-video-sustained",
+        "output_index": 0,
+        "content_index": 0,
+        "text": "<0f>0<|box;x1=16;y1=12;x2=127;y2=87;w=320;h=180|><|mask;x=0;y=0;data=76,112,!!!!!(y:O2*uz)|>\n<120f>0<|box;x1=96;y1=48;x2=223;y2=143;w=320;h=180|><|mask;x=0;y=0;data=96,128,!!!!!(y:IwL5+V|>\n<239f>0<|box;x1=184;y1=76;x2=303;y2=167;w=320;h=180|><|mask;x=0;y=0;data=92,120,!!!!!(y:MfEDUx|>\n"
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "response.completed"
+      }
+    }
+  ]
+}

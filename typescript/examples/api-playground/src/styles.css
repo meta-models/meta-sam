@@ -1,0 +1,286 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+ */
+
+/*
+ * Custom CSS is limited to viewport normalization and layout surface fills;
+ * responsive stage sizing; media aspect-fit/canvas geometry; thumbnail crops;
+ * object-color swatches; and inspector protocol overflow/columns that Astryx
+ * props cannot express.
+ */
+@layer playground {
+  :root {
+    font-family: var(--font-family-body);
+    background: var(--color-background-body);
+    color: var(--color-text-primary);
+    color-scheme: light dark;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  /* Astryx controls (tabs, inputs, buttons) inherit font-size rather than
+     setting it. The theme's tokens live on the theme root, so anchor the
+     inherited size there to match Text type="body"; keeping it off :root
+     leaves rem-based sizing tokens intact. */
+  body [data-astryx-theme] {
+    font-size: var(--text-body-size, var(--font-size-base));
+  }
+
+  html,
+  body,
+  #root {
+    min-width: 320px;
+    height: 100%;
+    margin: 0;
+    background: var(--color-background-body);
+    color: var(--color-text-primary);
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  .app {
+    background: var(--color-background-body);
+  }
+
+  .app__header,
+  .rail,
+  .panel {
+    background: var(--color-background-surface);
+  }
+
+  .workspace--narrow .stage {
+    height: min(640px, 60vh);
+  }
+
+  .example-thumb {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 32px;
+    overflow: hidden;
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-element);
+    background: var(--color-background-body);
+    color: var(--color-text-secondary);
+  }
+
+  .example-thumb__image,
+  .example-thumb__preview {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .example-thumb__preview {
+    position: absolute;
+    inset: 0;
+    background: var(--color-background-body);
+  }
+
+  .example-thumb__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .stage {
+    min-width: 0;
+    min-height: 0;
+    background: var(--color-background-body);
+    container-type: size;
+  }
+
+  .stage-shell {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    container-type: size;
+  }
+
+  .stage-frame {
+    position: relative;
+    display: grid;
+    overflow: hidden;
+    min-height: 0;
+    place-items: center;
+    border-radius: var(--radius-container);
+    background: #0b0d10;
+    box-shadow: var(--shadow-low);
+  }
+
+  .stage-frame--fit {
+    width: min(100%, calc(100cqh * var(--media-aspect, 1.7778)));
+    aspect-ratio: var(--media-aspect, 1.7778);
+    align-self: center;
+    justify-self: center;
+  }
+
+  .stage-shell .stage-frame--fit {
+    width: min(100%, calc((100cqh - 60px) * var(--media-aspect, 1.7778)));
+  }
+
+  .stage-frame--empty {
+    width: 100%;
+    height: 100%;
+    border: 1px dashed var(--color-border-emphasized);
+    background: var(--color-background-surface);
+    box-shadow: none;
+  }
+
+  .stage-frame[data-run-status='streaming']::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--color-border-focus);
+    border-radius: inherit;
+    pointer-events: none;
+    animation: stage-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes stage-pulse {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+
+  .stage-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .stage-frame--video .stage-video {
+    display: block;
+    width: 100%;
+    max-height: 100%;
+  }
+
+  .stage-empty {
+    max-width: 28rem;
+    padding: var(--spacing-6);
+    text-align: center;
+  }
+
+  .transport__scrubber {
+    min-width: 120px;
+  }
+
+  .inspector {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    height: 100%;
+  }
+
+  .inspector__tabs {
+    padding: var(--spacing-2) var(--spacing-3) 0;
+    overflow-x: auto;
+  }
+
+  .inspector__body {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden auto;
+  }
+
+  .inspector__section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+    padding: var(--spacing-3);
+  }
+
+  .inspector__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-2) var(--spacing-3);
+  }
+
+  .legend__row[data-hidden='true'] {
+    opacity: 0.5;
+  }
+
+  .legend__swatch {
+    display: inline-block;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2);
+  }
+
+  .legend__swatch--sm {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+
+  .legend__swatch--text {
+    background: var(--color-border-emphasized);
+  }
+
+  .stream__content {
+    display: grid;
+    grid-template-columns: 64px 52px 36px minmax(0, 1fr);
+    gap: var(--spacing-2);
+    align-items: baseline;
+    min-width: 0;
+  }
+
+  .stream__content > :nth-child(1),
+  .stream__content > :nth-child(3) {
+    text-align: end;
+    white-space: nowrap;
+  }
+
+  .raw {
+    margin: 0;
+    padding: var(--spacing-3);
+    overflow: auto;
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-element);
+    background: var(--color-background-body);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  @media (max-width: 760px) {
+    .workspace--narrow .stage {
+      height: auto;
+      min-height: 40vh;
+    }
+
+    .stage-frame--fit,
+    .stage-shell .stage-frame--fit {
+      width: 100%;
+    }
+
+    .stage-frame--empty {
+      min-height: 40vh;
+    }
+
+    .inspector {
+      height: auto;
+    }
+
+    .inspector__body {
+      overflow: visible;
+    }
+  }
+}

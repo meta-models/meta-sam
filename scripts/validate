@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+ */
+"use strict";
+
+const { runPythonCommands } = require("./run-python.cjs");
+const { runTypeScriptNpmScriptAndWait } = require("./run-typescript.cjs");
+
+const PYTHON_VALIDATION_COMMANDS = Object.freeze([
+  ["-m", "ruff", "format", "--check", "."],
+  ["-m", "ruff", "check", "."],
+  ["-m", "mypy"],
+  ["-m", "pytest"],
+  ["scripts/build_artifacts.py"],
+  ["scripts/audit_distribution.py"],
+]);
+
+async function validate({
+  environment = process.env,
+  runTypeScript = runTypeScriptNpmScriptAndWait,
+  runPython = runPythonCommands,
+} = {}) {
+  const typeScriptCode = await runTypeScript("validate");
+  if (
+    typeScriptCode !== 0 ||
+    environment.META_SAM_VALIDATE_TYPESCRIPT_ONLY === "1"
+  ) {
+    return typeScriptCode;
+  }
+  return runPython(PYTHON_VALIDATION_COMMANDS);
+}
+
+module.exports = { PYTHON_VALIDATION_COMMANDS, validate };
+
+if (require.main === module) {
+  void validate().then((code) => {
+    process.exitCode = code;
+  });
+}

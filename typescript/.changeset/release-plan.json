@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    {
+      "name": "@meta-sam/parser",
+      "version": "0.0.12"
+    },
+    {
+      "name": "@meta-sam/graphics",
+      "version": "0.1.9"
+    },
+    {
+      "name": "@meta-sam/video",
+      "version": "0.1.4"
+    },
+    {
+      "name": "@meta-sam/react",
+      "version": "0.1.9"
+    }
+  ]
+}

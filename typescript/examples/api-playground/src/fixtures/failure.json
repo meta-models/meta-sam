@@ -1,0 +1,17 @@
+{
+  "id": "failure",
+  "mediaMode": "image",
+  "title": "Failure",
+  "description": "A structural failed terminal event with a generic message.",
+  "prompt": "bench objects",
+  "media": { "url": "/media/synthetic-bench.svg", "width": 96, "height": 64 },
+  "events": [
+    {
+      "delayMs": 180,
+      "event": {
+        "type": "response.failed",
+        "response": { "error": { "message": "The replayed response failed." } }
+      }
+    }
+  ]
+}

@@ -1,0 +1,155 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: typescript
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install npm 11
+        run: npm install --global npm@11.16.0
+      - name: Validate toolchain
+        run: node --version && npm --version && python --version
+      - name: Install
+        run: npm ci
+      - name: Check release intent
+        if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
+        run: |
+          npm run changeset:check -- --base=origin/main
+          npm run changeset:status -- --since=origin/main
+      - name: Validate
+        env:
+          META_SAM_VALIDATE_TYPESCRIPT_ONLY: "1"
+        run: node ../scripts/validate
+
+  playground:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: |
+            typescript/package-lock.json
+            typescript/examples/api-playground/package-lock.json
+      - name: Install npm 11
+        run: npm install --global npm@11.16.0
+      - name: Install workspace dependencies
+        run: npm ci
+      - name: Install playground dependencies
+        run: npm ci --prefix examples/api-playground
+      - name: Build playground
+        run: npm run playground:build
+      - name: Run playground unit tests
+        run: npm run test --prefix examples/api-playground
+      - name: Install Playwright Chromium
+        run: cd examples/api-playground && ../../scripts/ci-retry.sh npx playwright install --with-deps chromium
+      - name: Run playground browser tests
+        run: npm run playground:test:browser
+      - name: Upload playground diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playground-test-results
+          path: |
+            typescript/examples/api-playground/test-results/
+            typescript/examples/api-playground/playwright-report/
+          if-no-files-found: ignore
+
+  playground-packed:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install npm 11
+        run: npm install --global npm@11.16.0
+      - name: Install workspace dependencies
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: scripts/ci-retry.sh npx playwright install --with-deps chromium
+      - name: Test packed playground packages
+        run: npm run playground:test:packed
+
+  browser-media:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install npm 11
+        run: npm install --global npm@11.16.0
+      - name: Install
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: scripts/ci-retry.sh npx playwright install --with-deps chromium
+      - name: Install FFmpeg
+        run: scripts/ci-retry.sh sh -c 'sudo apt-get update && sudo apt-get install --yes ffmpeg'
+      - name: Run required browser media tests
+        run: npm run test:browser -- --project=chromium
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-test-results
+          path: |
+            typescript/test-results/
+            typescript/playwright-report/
+          if-no-files-found: ignore
+
+  media-performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install npm 11
+        run: npm install --global npm@11.16.0
+      - name: Install
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: scripts/ci-retry.sh npx playwright install --with-deps chromium
+      - name: Install FFmpeg
+        run: scripts/ci-retry.sh sh -c 'sudo apt-get update && sudo apt-get install --yes ffmpeg'
+      - name: Run stable media performance gates
+        run: npm run test:media-performance -- --project=chromium
+      - name: Upload media performance diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: media-performance-results
+          path: |
+            typescript/test-results/
+            typescript/playwright-report/
+          if-no-files-found: ignore

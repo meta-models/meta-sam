@@ -1,0 +1,78 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+ */
+
+@layer playground {
+  /* The stream and raw panels own the inspector body: the rows scroll inside
+     them rather than growing the panel, which is what keeps the DOM bounded. */
+  .inspector__section--fill {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .virtual-rows {
+    min-height: 0;
+    overflow: auto;
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-element);
+    background: var(--color-background-body);
+  }
+
+  .virtual-rows__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .virtual-rows__row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    padding-inline: var(--spacing-2);
+    border-bottom: var(--border-width) solid var(--color-border);
+  }
+
+  .stream-log__viewport {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .stream-log__rows {
+    flex: 1 1 auto;
+  }
+
+  .stream__row > .stream__content {
+    width: 100%;
+  }
+
+  .stream-log__jump {
+    position: absolute;
+    inset-inline: 0;
+    bottom: var(--spacing-2);
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .stream-log__jump > * {
+    pointer-events: auto;
+  }
+
+  .raw-output {
+    flex: 1 1 auto;
+    overflow: auto;
+  }
+
+  /* Lines are never wrapped, so the widest one sets the scrollable width. */
+  .raw-output .virtual-rows__list {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .raw-output__line {
+    white-space: pre;
+    border-bottom: 0;
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "name": "@meta-sam/react",
+  "version": "0.1.9",
+  "description": "Canvas-only React video player for SAM 3 overlays",
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://dev.meta.ai/",
+  "bugs": {
+    "url": "https://github.com/meta-models/meta-sam/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meta-models/meta-sam.git",
+    "directory": "typescript/packages/react"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "browser": "./dist/index.js",
+  "engines": {
+    "node": "^20.17.0 || >=22.9.0"
+  },
+  "dependencies": {
+    "@meta-sam/graphics": "0.1.9",
+    "@meta-sam/parser": "0.0.12",
+    "@meta-sam/video": "0.1.4"
+  },
+  "peerDependencies": {
+    "react": ">=18.2 <20",
+    "react-dom": ">=18.2 <20"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "prepack": "tsc -b --force",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

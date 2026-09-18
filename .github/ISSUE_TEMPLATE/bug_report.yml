@@ -1,0 +1,87 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+
+name: Bug report
+description: A parser, graphics, video, or React package does not behave as documented.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please read the checklist first: a public issue must never contain credentials, private media, or model output that can identify a person. Use synthetic media and synthetic SAM 3 output, or the sample assets under `typescript/examples/api-playground/public/media/`.
+
+        Security issues go to the [Meta Bug Bounty program](https://bugbounty.meta.com/), not here.
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: The reproduction below contains no API key, no private media, and no personal data.
+          required: true
+        - label: This is a bug in a `meta-sam` package, not a question about the SAM 3.1 Model API itself.
+          required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      description: Which package is affected?
+      multiple: true
+      options:
+        - "@meta-sam/parser (npm)"
+        - "@meta-sam/graphics (npm)"
+        - "@meta-sam/video (npm)"
+        - "@meta-sam/react (npm)"
+        - "meta-sam-parser (PyPI)"
+        - "conformance corpus / protocol document"
+        - "api-playground example"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version(s)
+      description: Exact published version, e.g. `@meta-sam/parser@0.0.11` or `meta-sam-parser==0.0.4`.
+      placeholder: "@meta-sam/parser@0.0.11"
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      description: Node.js / browser / Python version and OS.
+      placeholder: "Node 24.18 on macOS 15; Python 3.12 on Ubuntu 24.04; Chrome 149"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen, ideally citing the README or `protocol/sam3.md`.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happens instead. Paste the exact error class and message, and any `diagnostics` the parser produced.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: |
+        Minimal code plus the input that triggers it. For parser bugs, include the Responses event sequence (event `type`s in order) and the SAM 3 output text or a synthetic equivalent, e.g.
+        `<0f>0<|box;x1=211;y1=228;x2=270;y2=254;w=320;h=334|><|mask;x=0;y=0;data=27,60,~...|>`.
+        Redact prompts and object content if they are sensitive; the wire grammar is what matters.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else useful — e.g. whether the same input passes the shared conformance runner in the other language.

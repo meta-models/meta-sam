@@ -1,0 +1,203 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+
+# Releases `meta-sam-parser` to PyPI.
+#
+# A release starts by pushing the tag `meta-sam-parser@<version>` at the commit
+# whose `python/pyproject.toml` declares that exact version. The workflow builds
+# the reproducible wheel and sdist, runs the artifact and clean-consumer audits
+# and the cross-language conformance suite, and only then publishes from the
+# `pypi` GitHub environment, whose protection rules (required reviewers) are the
+# human approval gate. A manual dispatch from `main` rehearses the same steps
+# against TestPyPI from the `testpypi` environment and never reaches PyPI.
+#
+# Authentication is PyPI trusted publishing: `id-token: write` lets the publish
+# action exchange the workflow's OIDC token for a short-lived upload token, so no
+# PyPI credential is stored in this repository. The trusted publisher registered
+# on PyPI must name this repository, the workflow file `release-pypi.yml`, and
+# the environment `pypi` (or `testpypi`).
+
+name: release PyPI distribution
+
+on:
+  push:
+    tags:
+      - "meta-sam-parser@*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-sam-pypi-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+      - name: Install development tools
+        run: python -m pip install --disable-pip-version-check -e '.[dev]'
+      - name: Resolve the release identity
+        id: identity
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          version="$(python -c 'import re, pathlib; print(re.search(r"^version = \"([^\"]+)\"$", pathlib.Path("pyproject.toml").read_text(), re.M).group(1))')"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            if [ "$GITHUB_REF_NAME" != "meta-sam-parser@$version" ]; then
+              echo "tag $GITHUB_REF_NAME does not match pyproject version $version" >&2
+              exit 1
+            fi
+            # A release tag must name a commit on main, and the latest commit that
+            # touched the Python distribution: a tag left behind on an older commit
+            # would otherwise publish stale source under the current version number.
+            git fetch --no-tags origin main
+            if ! git merge-base --is-ancestor HEAD origin/main; then
+              echo "tag $GITHUB_REF_NAME points at $(git rev-parse --short HEAD), which is not on main" >&2
+              exit 1
+            fi
+            # This step runs in python/, so anchor the pathspecs at the repository root.
+            latest="$(git rev-list -1 origin/main -- :/python :/conformance :/protocol)"
+            if [ -z "$latest" ] || ! git merge-base --is-ancestor "$latest" HEAD; then
+              echo "tag $GITHUB_REF_NAME predates $(git rev-parse --short "$latest"), the latest main commit touching python/, conformance/, or protocol/" >&2
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Check formatting
+        run: python -m ruff format --check .
+      - name: Lint
+        run: python -m ruff check .
+      - name: Type check
+        run: python -m mypy
+      - name: Test
+        run: python -m pytest
+      - name: Build wheel and sdist
+        run: python scripts/build_artifacts.py
+      - name: Audit artifacts and reproducibility
+        run: python scripts/audit_distribution.py --mode artifacts
+      - name: Record artifact digests
+        run: sha256sum *.whl *.tar.gz | tee SHA256SUMS
+        working-directory: python/dist
+      - name: Upload audited distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pypi-distributions
+          path: python/dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  clean-consumers:
+    needs: build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            python/pyproject.toml
+            python/requirements-openai.txt
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pypi-distributions
+          path: python/dist
+      - name: Verify artifact digests
+        run: sha256sum --check SHA256SUMS
+        working-directory: python/dist
+      - name: Remove the digest file from the distribution set
+        run: rm dist/SHA256SUMS
+      - name: Install audit tools
+        run: python -m pip install --disable-pip-version-check mypy==1.18.2
+      - name: Audit clean wheel and sdist consumers
+        run: python scripts/audit_distribution.py --mode consumers
+
+  cross-language-conformance:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+      - name: Install npm 11
+        working-directory: typescript
+        run: npm install --global npm@11.16.0
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: npm ci
+      - name: Install Python dependencies
+        working-directory: python
+        run: python -m pip install --disable-pip-version-check -e '.[dev]'
+      - name: Run both conformance implementations
+        run: node scripts/validate-conformance
+
+  publish:
+    needs: [build, clean-consumers, cross-language-conformance]
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'push' && 'pypi' || 'testpypi' }}
+      url: ${{ github.event_name == 'push' && 'https://pypi.org/project/meta-sam-parser/' || 'https://test.pypi.org/project/meta-sam-parser/' }}
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pypi-distributions
+          path: dist
+      - name: Verify artifact digests
+        run: sha256sum --check SHA256SUMS && rm SHA256SUMS
+        working-directory: dist
+      - name: Publish to TestPyPI
+        if: github.event_name != 'push'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+          print-hash: true
+      - name: Publish to PyPI
+        if: github.event_name == 'push'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/
+          print-hash: true
+      - name: Create the GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: >-
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+          gh release create "$TAG" dist/*
+          --repo "$GITHUB_REPOSITORY"
+          --title "meta-sam-parser $VERSION"
+          --notes "meta-sam-parser $VERSION on PyPI: https://pypi.org/project/meta-sam-parser/$VERSION/"
+          --verify-tag

@@ -1,0 +1,166 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+
+# Releases the TypeScript packages to the public npm registry.
+#
+# Every merge to main runs the `version` job, which keeps one rolling
+# "chore: version packages" pull request up to date from pending changesets.
+# Merging that pull request leaves no pending changesets, so the same workflow
+# run continues into `browser-validation` and then `publish`. The `publish` job
+# runs in the `npm` GitHub environment; its protection rules (required
+# reviewers) are the human approval gate for every publication.
+#
+# Authentication is npm trusted publishing: `id-token: write` lets npm exchange
+# the workflow's OIDC token with npmjs.com, so no registry credential is stored
+# in this repository. An `NPM_TOKEN` environment secret, when present, takes
+# precedence; it is only needed to publish a package for the very first time,
+# before its trusted publisher can be configured on npmjs.com.
+
+name: release npm packages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "typescript/.changeset/**"
+      - ".github/workflows/release-npm.yml"
+      - "typescript/package.json"
+      - "typescript/package-lock.json"
+      - "typescript/packages/**"
+      - "typescript/scripts/create-release-archives.mjs"
+      - "typescript/scripts/test-playground-packages.mjs"
+      - "typescript/examples/api-playground/**"
+      - "typescript/test/browser/fixtures/**"
+      - "typescript/scripts/publish-npm.mjs"
+      - "typescript/scripts/publish-release-plan.mjs"
+      - "typescript/scripts/release-packages.mjs"
+      - "typescript/scripts/version-packages.mjs"
+      - "typescript/tsconfig.base.json"
+      - "protocol/**"
+      - "conformance/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: typescript
+
+concurrency:
+  group: meta-sam-npm-release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install npm 11
+        run: npm install --global npm@11.16.0
+      - name: Install
+        run: npm ci
+      - name: Create or update release pull request
+        id: changesets
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d
+        with:
+          cwd: typescript
+          version: npm run version-packages
+          commit: "chore: version packages"
+          title: "chore: version packages"
+          branch: main
+          createGithubReleases: false
+
+  browser-validation:
+    needs: version
+    if: needs.version.outputs.hasChangesets == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install npm 11
+        run: npm install --global npm@11.16.0
+      - name: Install
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: scripts/ci-retry.sh npx playwright install --with-deps chromium
+      - name: Install FFmpeg
+        run: scripts/ci-retry.sh sh -c 'sudo apt-get update && sudo apt-get install --yes ffmpeg'
+      - name: Run packed playground validation
+        run: npm run playground:test:packed
+      - name: Run required browser validation
+        run: npm run test:browser -- --project=chromium
+      - name: Run required media performance validation
+        run: npm run test:media-performance -- --project=chromium
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: publish-browser-validation
+          path: |
+            typescript/test-results/
+            typescript/playwright-report/
+          if-no-files-found: ignore
+
+  publish:
+    needs: [version, browser-validation]
+    if: needs.version.outputs.hasChangesets == 'false'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install npm 11
+        run: npm install --global npm@11.16.0
+      - name: Install
+        run: npm ci
+      - name: Check for a reviewed release plan
+        id: plan
+        run: |
+          if [ -f .changeset/release-plan.json ]; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Validate
+        if: steps.plan.outputs.exists == 'true'
+        run: npm run validate
+      - name: Publish reviewed release plan
+        if: steps.plan.outputs.exists == 'true'
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d
+        with:
+          cwd: typescript
+          publish: npm run release:npm
+          commitMode: github-api
+          createGithubReleases: true
+        env:
+          # Empty unless the `npm` environment defines NPM_TOKEN; the action then
+          # falls back to OIDC trusted publishing.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

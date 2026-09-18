@@ -1,0 +1,20 @@
+{
+  "id": "refusal",
+  "mediaMode": "image",
+  "title": "Refusal",
+  "description": "A structural refusal event with no segmentation output.",
+  "prompt": "restricted object",
+  "media": { "url": "/media/synthetic-bench.svg", "width": 96, "height": 64 },
+  "events": [
+    {
+      "delayMs": 180,
+      "event": {
+        "type": "response.refusal.done",
+        "item_id": "message-refusal",
+        "output_index": 0,
+        "content_index": 0,
+        "refusal": "The request was refused."
+      }
+    }
+  ]
+}

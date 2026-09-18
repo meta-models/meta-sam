@@ -1,0 +1,90 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
+
+name: media compatibility
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: typescript
+
+jobs:
+  codec-compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: chromium
+            install: chromium
+            branded: "0"
+          - project: chrome
+            install: chrome
+            branded: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install npm 11
+        run: npm install --global npm@11.16.0
+      - name: Install
+        run: npm ci
+      - name: Install browser
+        run: scripts/ci-retry.sh npx playwright install --with-deps ${{ matrix.install }}
+      - name: Install FFmpeg
+        run: scripts/ci-retry.sh sh -c 'sudo apt-get update && sudo apt-get install --yes ffmpeg'
+      - name: Run browser media compatibility suite
+        env:
+          PLAYWRIGHT_BRANDED_CHROME: ${{ matrix.branded }}
+        run: npm run test:browser -- --project=${{ matrix.project }}
+      - name: Upload codec capability artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: codec-capabilities-${{ matrix.project }}
+          path: |
+            typescript/test-results/
+            typescript/playwright-report/
+          if-no-files-found: ignore
+
+  react-mount-stress-100:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install npm 11
+        run: npm install --global npm@11.16.0
+      - name: Install
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: scripts/ci-retry.sh npx playwright install --with-deps chromium
+      - name: Install FFmpeg
+        run: scripts/ci-retry.sh sh -c 'sudo apt-get update && sudo apt-get install --yes ffmpeg'
+      - name: Run 100-cycle React mount stress lane
+        env:
+          MEDIA_REACT_STRESS_CYCLES: "100"
+        run: >-
+          npm run test:media-performance -- --project=chromium
+          --grep='React media players'
+      - name: Upload React stress diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: react-mount-stress-100
+          path: |
+            typescript/test-results/
+            typescript/playwright-report/
+          if-no-files-found: ignore
