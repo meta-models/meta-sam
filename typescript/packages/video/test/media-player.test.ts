@@ -510,6 +510,35 @@ describe('MediaPlayer', () => {
     player.dispose();
   });
 
+  it('excludes negative-timestamp decode preroll from presented frame indexes', async () => {
+    fakeMedia.datasets.set(source, {
+      packets: [
+        {
+          timestamp: -0.1,
+          duration: 0.1,
+          sequenceNumber: -1,
+          type: 'key',
+          byteLength: 9,
+        },
+        ...packets,
+      ],
+    });
+    const { player } = setup();
+    const loaded = vi.fn();
+    player.on('loadedmetadata', loaded);
+
+    await player.open(source);
+
+    expect(player.getVideoPackets().map(({ timestamp }) => timestamp)).toEqual([
+      0, 0.1, 0.2, 0.3,
+    ]);
+    expect(player.currentFrameIndex).toBe(0);
+    expect(player.getTimeAtFrameIndexExact(0)).toBe(0);
+    expect(fakeMedia.frameRequests).not.toContain(-0.1);
+    expect(loaded).toHaveBeenCalledWith(expect.objectContaining({ numFrames: 4 }));
+    player.dispose();
+  });
+
   it('keeps atomic playback statistics within the configured sample window', async () => {
     const { player } = setup(undefined, undefined, { statsSampleWindowSize: 2 });
     let renderCostMilliseconds = 1;

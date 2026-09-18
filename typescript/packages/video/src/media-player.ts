@@ -705,6 +705,9 @@ export class MediaPlayer implements IMediaPlayer {
         metadataOnly: true,
       })) {
         this.#assertSourceGeneration(sourceGeneration, 'open');
+        // Negative timestamps are decode preroll and must not become presented
+        // frame indexes. SAM frame markers index only presented source frames.
+        if (packet.timestamp < 0) continue;
         packetInputs.push({
           timestamp: packet.timestamp,
           duration: packet.duration,
