@@ -1,6 +1,6 @@
 {
   "name": "@meta-sam/react",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Canvas-only React video player for SAM 3 overlays",
   "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://dev.meta.ai/",
@@ -36,7 +36,7 @@
   "dependencies": {
     "@meta-sam/graphics": "0.1.9",
     "@meta-sam/parser": "0.0.12",
-    "@meta-sam/video": "0.1.4"
+    "@meta-sam/video": "0.1.5"
   },
   "peerDependencies": {
     "react": ">=18.2 <20",

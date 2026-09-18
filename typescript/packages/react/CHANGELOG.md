@@ -1,5 +1,12 @@
 # @meta-sam/react
 
+## 0.1.10
+
+### Patch Changes
+
+- Updated dependencies [97c6bc5]
+  - @meta-sam/video@0.1.5
+
 ## 0.1.9
 
 ### Patch Changes
