@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { parseByteRange } from '../static-files.mjs';
+import { parseByteRange } from '../server/static-files.ts';
 
 describe('parseByteRange', () => {
   it('parses bounded, open-ended, suffix, and case-insensitive byte ranges', () => {

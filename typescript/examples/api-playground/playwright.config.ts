@@ -25,6 +25,10 @@ export default defineConfig({
   webServer: {
     command: 'npm run preview -- --host 127.0.0.1 --port 4173',
     url: 'http://127.0.0.1:4173/api/config',
+    env: {
+      SAM_API_KEY: '',
+      SAM_MODEL: '',
+    },
     reuseExistingServer: false,
     timeout: 120_000,
   },

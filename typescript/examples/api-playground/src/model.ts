@@ -28,6 +28,16 @@ export const MAX_PROMPT_LENGTH = 160;
 export const MAX_STREAM_ENTRIES = 5_000;
 export const MODEL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,120}$/;
 
+export function mediaKindFromFile(file: File): MediaKind | null {
+  const type = file.type.toLowerCase();
+  const name = file.name.toLowerCase();
+  if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('video/')) return 'video';
+  if (/\.(png|jpe?g|webp|gif)$/.test(name)) return 'image';
+  if (/\.(mp4|m4v|mov|webm)$/.test(name)) return 'video';
+  return null;
+}
+
 /**
  * The Files API handle for the staged video. It belongs to the media rather
  * than to a run: the same handle serves every run on that media, and only a

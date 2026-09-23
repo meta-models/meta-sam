@@ -2,10 +2,16 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
  */
 
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 
-export function parseByteRange(value, size) {
+export type ByteRange = Readonly<{ start: number; end: number }>;
+
+export function parseByteRange(
+  value: string | string[] | undefined,
+  size: number,
+): ByteRange | null | undefined {
   if (value === undefined) return null;
   if (!Number.isSafeInteger(size) || size < 0) throw new TypeError('size is invalid.');
   if (typeof value !== 'string') return null;
@@ -36,11 +42,14 @@ export function parseByteRange(value, size) {
 }
 
 export async function serveFile(
-  request,
-  response,
-  file,
-  { contentType = 'application/octet-stream', allowRanges = false } = {},
-) {
+  request: IncomingMessage,
+  response: ServerResponse,
+  file: string,
+  {
+    contentType = 'application/octet-stream',
+    allowRanges = false,
+  }: { contentType?: string; allowRanges?: boolean } = {},
+): Promise<boolean> {
   const metadata = await stat(file);
   if (!metadata.isFile()) return false;
   if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -82,7 +91,7 @@ export async function serveFile(
     return true;
   }
 
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const stream = createReadStream(file, { start, end });
     stream.once('error', reject);
     response.once('error', reject);

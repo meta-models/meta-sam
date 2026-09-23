@@ -4,6 +4,12 @@
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+declare global {
+  interface Window {
+    __playgroundRenders?: Record<string, number>;
+  }
+}
+
 const PNG_PIXEL = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
@@ -127,6 +133,25 @@ function pixelDelta(a: number[], b: number[]) {
     (sum, channel, index) => sum + Math.abs(channel - (b[index] ?? 0)),
     0,
   );
+}
+
+async function waitForStableInputValue(
+  input: Locator,
+  expected: string,
+  stableForMs = 500,
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  let stableSince: number | null = null;
+  while (Date.now() < deadline) {
+    if ((await input.inputValue()) === expected) {
+      stableSince ??= Date.now();
+      if (Date.now() - stableSince >= stableForMs) return;
+    } else {
+      stableSince = null;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`The input value did not remain ${JSON.stringify(expected)}.`);
 }
 
 async function openFixture(page: Page, id: string) {
@@ -277,7 +302,7 @@ test.describe('image replay fixtures', () => {
     const input = page.getByRole('textbox', { name: 'Noun phrase' });
     const initialPrompt = await input.inputValue();
     const beforeStream = await renderCounts(page);
-    await input.press('End');
+    await input.click();
     await input.pressSequentially('abcdefghij');
     await expect(input).toHaveValue(`${initialPrompt}abcdefghij`);
     await expect
@@ -295,8 +320,9 @@ test.describe('image replay fixtures', () => {
     await page.getByRole('tab', { name: 'Raw', exact: true }).click();
     await expect(page.getByTestId('raw-output')).toBeVisible();
     const beforeRaw = await renderCounts(page);
-    await input.press('End');
-    await input.pressSequentially('klmnopqrst');
+    await input.click();
+    await input.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+    await input.pressSequentially(`${initialPrompt}abcdefghijklmnopqrst`);
     await expect(input).toHaveValue(`${initialPrompt}abcdefghijklmnopqrst`);
     const afterRaw = await renderCounts(page);
     expectUnchanged(beforeRaw, afterRaw, [
@@ -431,14 +457,22 @@ test.describe('live relay', () => {
     await expect(page.locator('.app__brand')).toContainText('configured-model');
     await typeahead.getByRole('button', { name: 'configured-model' }).click();
     const input = page.getByRole('combobox', { name: 'Model' });
-    await input.fill('sam-3');
-    await expect(
-      page.getByRole('option', { name: 'sam-3.1', exact: true }),
-    ).toBeVisible();
+    await expect(input).toBeEnabled();
+    await waitForStableInputValue(input, 'configured-model');
+    await input.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+    await input.pressSequentially('sam-3');
+    const samOption = page.getByRole('option', { name: 'sam-3.1', exact: true });
+    await expect(samOption).toBeVisible();
     await expect(
       page.getByRole('option', { name: 'alpha-model', exact: true }),
     ).toHaveCount(0);
-    await page.getByRole('option', { name: 'sam-3.1', exact: true }).click();
+    const optionBox = await samOption.boundingBox();
+    expect(optionBox).not.toBeNull();
+    if (optionBox === null) throw new Error('The model option is not visible.');
+    await page.mouse.click(
+      optionBox.x + optionBox.width / 2,
+      optionBox.y + optionBox.height / 2,
+    );
 
     await expect(typeahead).toContainText('sam-3.1');
     await expect(page.locator('.app__brand')).toContainText('sam-3.1');
@@ -503,7 +537,9 @@ test.describe('live relay', () => {
     });
     await expect(page.locator('.rail__current')).toContainText('live-sample.png');
     const prompt = page.getByRole('textbox', { name: 'Noun phrase' });
-    await prompt.fill('live rectangular objects');
+    await prompt.click();
+    await prompt.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+    await prompt.pressSequentially('live rectangular objects');
     const segment = page.getByRole('button', { name: 'Segment', exact: true });
     await expect(segment).toBeEnabled();
     await segment.click();
@@ -663,6 +699,14 @@ test.describe('video fixture', () => {
     await expect(page.getByTestId('video-frame-count')).toContainText(
       `frame ${frame + 1} /`,
     );
+    const paintBeforeOutlines = Number(await canvas.getAttribute('data-paint'));
+    await page.getByRole('button', { name: 'Outlines' }).click();
+    await expect(page.getByTestId('video-frame-count')).toContainText(
+      `frame ${frame + 1} /`,
+    );
+    await expect
+      .poll(async () => Number(await canvas.getAttribute('data-paint')))
+      .toBeGreaterThan(paintBeforeOutlines);
 
     await page.getByRole('tab', { name: /Records/ }).click();
     await expect(
@@ -759,8 +803,17 @@ test.describe('examples rail', () => {
     await expect(page.locator('.example-thumb__image').first()).toBeVisible({
       timeout: 60_000,
     });
-    await page.getByRole('button', { name: /^Bedroom/ }).hover();
-    await page.waitForTimeout(500);
+    const bedroom = page.getByRole('button', { name: /^Bedroom/ });
+    await bedroom.hover();
+    await expect
+      .poll(() => bedroom.evaluate((element) => element.matches(':hover')))
+      .toBe(true);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
     await expect(page.locator('video')).toHaveCount(0);
   });
 });

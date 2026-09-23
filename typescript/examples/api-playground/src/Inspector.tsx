@@ -57,6 +57,8 @@ interface ObjectSummary {
 }
 
 const RECORD_DISPLAY_LIMIT = 400;
+const EMPTY_RECORDS: readonly SegmentationRecord[] = Object.freeze([]);
+const EMPTY_DIAGNOSTICS: readonly SegmentationDiagnostic[] = Object.freeze([]);
 
 function summarizeObjects(records: readonly SegmentationRecord[]): ObjectSummary[] {
   const map = new Map<string, { boxes: number; masks: number; frames: Set<number> }>();
@@ -80,7 +82,7 @@ function summarizeObjects(records: readonly SegmentationRecord[]): ObjectSummary
   }));
 }
 
-export function recordSummary(record: SegmentationRecord): string {
+function recordSummary(record: SegmentationRecord): string {
   switch (record.kind) {
     case 'text':
       return record.text.length > 80 ? `${record.text.slice(0, 77)}…` : record.text;
@@ -113,8 +115,8 @@ export function Inspector({
   onSetView,
 }: InspectorProps): React.JSX.Element {
   countRender('Inspector');
-  const records = snapshot?.records ?? [];
-  const diagnostics: readonly SegmentationDiagnostic[] = snapshot?.diagnostics ?? [];
+  const records = snapshot?.records ?? EMPTY_RECORDS;
+  const diagnostics = snapshot?.diagnostics ?? EMPTY_DIAGNOSTICS;
   const objects = useMemo(() => summarizeObjects(records), [records]);
   const [frameOnly, setFrameOnly] = useState(true);
   const hidden = useMemo(() => new Set(hiddenObjectIds), [hiddenObjectIds]);

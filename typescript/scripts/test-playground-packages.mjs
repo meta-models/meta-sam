@@ -17,7 +17,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, platform, tmpdir } from 'node:os';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -48,17 +48,16 @@ export const playgroundCopyFiles = [
   'DESIGN.md',
   'README.md',
   'index.html',
-  'openai-request.mjs',
   'package-lock.json',
   'package.json',
   'playwright.config.ts',
-  'server-core.mjs',
-  'server.mjs',
-  'static-files.mjs',
+  'tsconfig.app.json',
   'tsconfig.json',
+  'tsconfig.node.json',
+  'tsconfig.test.json',
   'vite.config.ts',
 ];
-export const playgroundCopyDirectories = ['public', 'src', 'test'];
+export const playgroundCopyDirectories = ['public', 'server', 'src', 'test'];
 const focusedBrowserFlows = [
   'streams cumulative evidence, renders overlay pixels, and fills the inspector',
   'plays packet-exact frames with one Canvas and follows the streamed frame',
@@ -374,14 +373,17 @@ async function createIsolatedSubprocessEnvironment(temporaryRoot) {
   await mkdir(npmCache, { recursive: true });
   await writeFile(userConfig, '', { mode: 0o600 });
   await writeFile(globalConfig, '', { mode: 0o600 });
+  const defaultPlaywrightBrowsersPath =
+    platform() === 'darwin'
+      ? resolve(homedir(), 'Library', 'Caches', 'ms-playwright')
+      : resolve(homedir(), '.cache', 'ms-playwright');
   return createSubprocessEnvironment({
     home,
     npmCache,
     userConfig,
     globalConfig,
     playwrightBrowsersPath:
-      process.env.PLAYWRIGHT_BROWSERS_PATH ??
-      resolve(homedir(), '.cache', 'ms-playwright'),
+      process.env.PLAYWRIGHT_BROWSERS_PATH ?? defaultPlaywrightBrowsersPath,
   });
 }
 

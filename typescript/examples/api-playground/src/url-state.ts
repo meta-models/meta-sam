@@ -45,24 +45,41 @@ export function readSafeUrlState(url: URL): SafeUrlSettings {
   };
 }
 
-export function createSafeUrl(state: AppState, current: URL): URL {
+export function safeUrlSettingsFromState(state: AppState): SafeUrlSettings {
+  return {
+    exampleId:
+      state.media.origin === 'example' && state.media.id !== null
+        ? state.media.id
+        : null,
+    fixtureId:
+      state.media.origin === 'fixture' && state.media.id !== null
+        ? state.media.id
+        : null,
+    prompt: state.prompt.text,
+    model: state.request.model,
+    showOverlay: state.view.showOverlay,
+    inspectorTab: state.view.inspectorTab,
+  };
+}
+
+export function createSafeUrl(settings: SafeUrlSettings, current: URL): URL {
   const next = new URL(current.pathname, current.origin);
   next.hash = current.hash;
-  if (state.media.origin === 'example' && state.media.id !== null) {
-    next.searchParams.set('example', state.media.id);
-  } else if (state.media.origin === 'fixture' && state.media.id !== null) {
-    next.searchParams.set('fixture', state.media.id);
+  if (settings.exampleId !== null) {
+    next.searchParams.set('example', settings.exampleId);
+  } else if (settings.fixtureId !== null) {
+    next.searchParams.set('fixture', settings.fixtureId);
   }
-  const prompt = state.prompt.text.trim();
+  const prompt = settings.prompt?.trim() ?? '';
   if (prompt.length > 0) {
     next.searchParams.set('prompt', prompt.slice(0, MAX_PROMPT_LENGTH));
   }
-  if (state.request.model !== null && MODEL_ID_PATTERN.test(state.request.model)) {
-    next.searchParams.set('model', state.request.model);
+  if (settings.model !== null && MODEL_ID_PATTERN.test(settings.model)) {
+    next.searchParams.set('model', settings.model);
   }
-  if (!state.view.showOverlay) next.searchParams.set('overlay', '0');
-  if (state.view.inspectorTab !== 'objects') {
-    next.searchParams.set('panel', state.view.inspectorTab);
+  if (!settings.showOverlay) next.searchParams.set('overlay', '0');
+  if (settings.inspectorTab !== null && settings.inspectorTab !== 'objects') {
+    next.searchParams.set('panel', settings.inspectorTab);
   }
   return next;
 }

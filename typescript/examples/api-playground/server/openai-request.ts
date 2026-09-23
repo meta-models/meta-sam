@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
  */
 
+import type { RelayInput, ServerConfig, ValidatedMedia } from './server-core.ts';
+
 const MAX_UNARY_RESPONSE_SIZE = 16 * 1024 * 1024;
 const MAX_UPLOAD_RESPONSE_SIZE = 64 * 1024;
 const MAX_MODELS_RESPONSE_SIZE = 256 * 1024;
@@ -9,7 +11,32 @@ const MAX_MODELS = 500;
 const FILE_ID_PATTERN = /^file-[A-Za-z0-9_-]{1,120}$/;
 const MODEL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,120}$/;
 
-export function normalizeSAMPrompt(expression) {
+type ModelRequestInput = {
+  model?: unknown;
+  prompt: string;
+};
+
+type ImageRequestInput = ModelRequestInput & {
+  media: ValidatedMedia;
+};
+
+type RequestBody = string | FormData;
+
+type RequestSpec<TBody extends RequestBody> = {
+  endpoint: URL;
+  init: Omit<RequestInit, 'body' | 'headers'> & {
+    body: TBody;
+    headers: Record<string, string>;
+  };
+};
+
+type JsonRecord = Record<string, unknown>;
+
+function record(value: unknown): JsonRecord | null {
+  return typeof value === 'object' && value !== null ? (value as JsonRecord) : null;
+}
+
+export function normalizeSAMPrompt(expression: string): string {
   const phrase = expression.trim();
   if (phrase.length === 0) {
     throw new TypeError('The SAM prompt must contain a noun phrase.');
@@ -17,15 +44,15 @@ export function normalizeSAMPrompt(expression) {
   return phrase;
 }
 
-function endpoint(config, path) {
+function endpoint(config: ServerConfig, path: string): URL {
   return new URL(path, `${config.baseURL.replace(/\/$/, '')}/`);
 }
 
-function authorization(config) {
+function authorization(config: ServerConfig): { Authorization: string } {
   return { Authorization: `Bearer ${config.apiKey}` };
 }
 
-function requestModel(config, input) {
+function requestModel(config: ServerConfig, input: ModelRequestInput): string {
   const model = input.model ?? config.model;
   if (typeof model !== 'string' || !MODEL_ID_PATTERN.test(model)) {
     throw new TypeError('The model identifier is invalid.');
@@ -33,7 +60,7 @@ function requestModel(config, input) {
   return model;
 }
 
-function userMessage(prompt, mediaPart) {
+function userMessage(prompt: string, mediaPart: JsonRecord): readonly JsonRecord[] {
   return [
     {
       type: 'message',
@@ -49,7 +76,10 @@ function userMessage(prompt, mediaPart) {
  * single JSON body and adapts it into the same event stream the video path
  * produces natively.
  */
-export function buildImageResponsesRequest(config, input) {
+export function buildImageResponsesRequest(
+  config: ServerConfig,
+  input: ImageRequestInput,
+): RequestSpec<string> {
   return {
     endpoint: endpoint(config, 'responses'),
     init: {
@@ -72,12 +102,15 @@ export function buildImageResponsesRequest(config, input) {
 }
 
 /** Video bytes go through the Files API once; the request carries only the handle. */
-export function buildFileUploadRequest(config, media) {
+export function buildFileUploadRequest(
+  config: ServerConfig,
+  media: ValidatedMedia,
+): RequestSpec<FormData> {
   const form = new FormData();
   form.append('purpose', 'user_data');
   form.append(
     'file',
-    new Blob([media.bytes], { type: media.mimeType }),
+    new Blob([new Uint8Array(media.bytes)], { type: media.mimeType }),
     media.filename,
   );
   return {
@@ -90,7 +123,11 @@ export function buildFileUploadRequest(config, media) {
   };
 }
 
-export function buildVideoResponsesRequest(config, input, fileId) {
+export function buildVideoResponsesRequest(
+  config: ServerConfig,
+  input: ModelRequestInput,
+  fileId: string,
+): RequestSpec<string> {
   if (!FILE_ID_PATTERN.test(fileId)) {
     throw new TypeError('The uploaded file handle is invalid.');
   }
@@ -112,7 +149,11 @@ export function buildVideoResponsesRequest(config, input, fileId) {
   };
 }
 
-async function readBoundedJson(response, limit, description) {
+async function readBoundedJson(
+  response: Response,
+  limit: number,
+  description: string,
+): Promise<unknown> {
   const declaredLength = Number(response.headers.get('content-length'));
   if (Number.isFinite(declaredLength) && declaredLength > limit) {
     throw new Error(`The ${description} exceeded its size limit.`);
@@ -121,7 +162,7 @@ async function readBoundedJson(response, limit, description) {
     throw new Error(`The ${description} had no body.`);
   }
   const reader = response.body.getReader();
-  const chunks = [];
+  const chunks: Uint8Array[] = [];
   let size = 0;
   let complete = false;
   try {
@@ -152,14 +193,20 @@ async function readBoundedJson(response, limit, description) {
 }
 
 export class UpstreamRequestError extends Error {
-  constructor(status, message) {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
     super(message);
     this.name = 'UpstreamRequestError';
     this.status = status;
   }
 }
 
-export async function fetchModelIds(config, signal, fetchImpl = fetch) {
+export async function fetchModelIds(
+  config: ServerConfig,
+  signal?: AbortSignal,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string[]> {
   const response = await fetchImpl(endpoint(config, 'models'), {
     method: 'GET',
     headers: { Accept: 'application/json', ...authorization(config) },
@@ -168,18 +215,26 @@ export async function fetchModelIds(config, signal, fetchImpl = fetch) {
   if (!response.ok) {
     throw new UpstreamRequestError(response.status, 'The model list is unavailable.');
   }
-  const body = await readBoundedJson(response, MAX_MODELS_RESPONSE_SIZE, 'model list');
-  if (!Array.isArray(body?.data) || body.data.length > MAX_MODELS) {
+  const body = record(
+    await readBoundedJson(response, MAX_MODELS_RESPONSE_SIZE, 'model list'),
+  );
+  if (body === null || !Array.isArray(body.data) || body.data.length > MAX_MODELS) {
     throw new TypeError('The model list is invalid.');
   }
-  return body.data.map((entry) => {
+  return body.data.map((value) => {
+    const entry = record(value);
     const id = typeof entry?.id === 'string' ? entry.id : '';
     if (!MODEL_ID_PATTERN.test(id)) throw new TypeError('The model list is invalid.');
     return id;
   });
 }
 
-export async function uploadMediaFile(config, media, signal, fetchImpl = fetch) {
+export async function uploadMediaFile(
+  config: ServerConfig,
+  media: ValidatedMedia,
+  signal: AbortSignal | undefined,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
   const request = buildFileUploadRequest(config, media);
   const response = await fetchImpl(request.endpoint, { ...request.init, signal });
   if (!response.ok) {
@@ -188,10 +243,8 @@ export async function uploadMediaFile(config, media, signal, fetchImpl = fetch) 
       'The segmentation service rejected the upload.',
     );
   }
-  const body = await readBoundedJson(
-    response,
-    MAX_UPLOAD_RESPONSE_SIZE,
-    'upload response',
+  const body = record(
+    await readBoundedJson(response, MAX_UPLOAD_RESPONSE_SIZE, 'upload response'),
   );
   const fileId = typeof body?.id === 'string' ? body.id : '';
   if (!FILE_ID_PATTERN.test(fileId)) {
@@ -200,19 +253,24 @@ export async function uploadMediaFile(config, media, signal, fetchImpl = fetch) 
   return fileId;
 }
 
-function responseEvents(body) {
+function responseEvents(value: unknown): JsonRecord[] {
+  const body = record(value);
+  if (body === null) {
+    throw new TypeError('The segmentation service returned an invalid response.');
+  }
   const output = Array.isArray(body.output) ? body.output : [];
-  const events = [];
+  const events: JsonRecord[] = [];
   let contentIndex = 0;
   for (let outputIndex = 0; outputIndex < output.length; outputIndex += 1) {
-    const item = output[outputIndex];
-    if (typeof item !== 'object' || item === null || !Array.isArray(item.content)) {
+    const item = record(output[outputIndex]);
+    if (item === null || !Array.isArray(item.content)) {
       continue;
     }
     const itemId =
       typeof item.id === 'string' && item.id.length > 0 ? item.id : 'sam-image';
-    for (const part of item.content) {
-      if (typeof part !== 'object' || part === null) continue;
+    for (const value of item.content) {
+      const part = record(value);
+      if (part === null) continue;
       const lane = {
         item_id: itemId,
         output_index: outputIndex,
@@ -246,7 +304,7 @@ function responseEvents(body) {
   return events;
 }
 
-export async function adaptUnaryResponse(response) {
+export async function adaptUnaryResponse(response: Response): Promise<Response> {
   if (!response.ok) return response;
   const body = await readBoundedJson(
     response,
@@ -267,11 +325,11 @@ export async function adaptUnaryResponse(response) {
  * `uploadMediaFile`, so no bytes cross this boundary a second time.
  */
 export async function createSAMResponsesStream(
-  config,
-  input,
-  signal,
-  fetchImpl = fetch,
-) {
+  config: ServerConfig,
+  input: RelayInput,
+  signal: AbortSignal | undefined,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Response> {
   if (input.kind === 'image') {
     const request = buildImageResponsesRequest(config, input);
     const response = await fetchImpl(request.endpoint, { ...request.init, signal });

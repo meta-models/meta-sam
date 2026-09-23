@@ -47,9 +47,16 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
-import type { MediaKind, MediaState, RunStatus } from './model';
+import type { MediaState, RunStatus } from './model';
 import { countRender } from './render-counts';
 
 type ImageSnapshot = ImageSegmentationSnapshot | ImageSegmentationResult;
@@ -83,6 +90,11 @@ interface RendererHandle {
   readonly renderer: SegmentationRenderer;
   readonly runId: number;
   readonly attempt: number;
+}
+
+interface RendererStore {
+  current: RendererHandle | null;
+  readonly listeners: Set<() => void>;
 }
 
 const RENDER_ERROR = 'The segmentation visualization could not be rendered.';
@@ -123,6 +135,45 @@ function renderErrorMessage(error: unknown): string {
     return `${RENDER_ERROR} (${error.code})`;
   }
   return RENDER_ERROR;
+}
+
+function useRendererHandle(
+  runId: number,
+  attempt: number,
+  showOutlines: boolean,
+  onInitializing: (runId: number, attempt: number) => void,
+  onError: (runId: number, attempt: number, message: string) => void,
+): RendererHandle | null {
+  const store = useRef<RendererStore>({ current: null, listeners: new Set() });
+  const subscribe = useCallback((listener: () => void) => {
+    store.current.listeners.add(listener);
+    return () => store.current.listeners.delete(listener);
+  }, []);
+  const getSnapshot = useCallback(() => store.current.current, []);
+
+  useEffect(() => {
+    const currentStore = store.current;
+    onInitializing(runId, attempt);
+    let renderer: SegmentationRenderer;
+    try {
+      renderer = new SegmentationRenderer(rendererOptions(showOutlines));
+    } catch (error) {
+      onError(runId, attempt, renderErrorMessage(error));
+      return;
+    }
+    const handle = { renderer, runId, attempt };
+    currentStore.current = handle;
+    for (const listener of currentStore.listeners) listener();
+    return () => {
+      if (currentStore.current === handle) {
+        currentStore.current = null;
+        for (const listener of currentStore.listeners) listener();
+      }
+      renderer.dispose();
+    };
+  }, [attempt, onError, onInitializing, runId, showOutlines]);
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 function isLifecycleCancellation(error: unknown): boolean {
@@ -166,7 +217,7 @@ export function Stage(props: StageProps): React.JSX.Element {
     return <VideoStage key={`video:${props.runId}`} {...props} />;
   }
   if (media.kind === 'image' && media.sourceUrl !== null) {
-    return <ImageStage {...props} />;
+    return <ImageStage key={`image:${media.sourceUrl}`} {...props} />;
   }
   return (
     <div className="stage-frame stage-frame--empty" data-run-status={props.status}>
@@ -201,7 +252,13 @@ function ImageStage({
   const lastSnapshot = useRef<ImageSnapshot | null>(null);
   // Counts completed paints so tests can wait for the paint after a change.
   const paints = useRef(0);
-  const [rendererHandle, setRendererHandle] = useState<RendererHandle | null>(null);
+  const rendererHandle = useRendererHandle(
+    runId,
+    rendererAttempt,
+    showOutlines,
+    onRendererInitializing,
+    onRendererError,
+  );
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [size, setSize] = useState({ width: 1, height: 1 });
@@ -221,8 +278,6 @@ function ImageStage({
   );
 
   useEffect(() => {
-    onRendererInitializing(runId, rendererAttempt);
-    setRendererHandle(null);
     lastResetKey.current = null;
     lastSnapshot.current = null;
     const canvas = canvasRef.current;
@@ -231,21 +286,10 @@ function ImageStage({
       canvas.height = 1;
       delete canvas.dataset.revision;
     }
-    let renderer: SegmentationRenderer;
-    try {
-      renderer = new SegmentationRenderer(rendererOptions(showOutlines));
-    } catch (error) {
-      onRendererError(runId, rendererAttempt, renderErrorMessage(error));
-      return;
-    }
-    setRendererHandle({ renderer, runId, attempt: rendererAttempt });
-    return () => renderer.dispose();
-  }, [onRendererError, onRendererInitializing, rendererAttempt, runId, showOutlines]);
+  }, [rendererHandle]);
 
   useEffect(() => {
     let active = true;
-    setImage(null);
-    setLoadError(false);
     if (sourceUrl === null) return;
     const element = new Image();
     element.onload = () => {
@@ -287,11 +331,12 @@ function ImageStage({
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    const handle = rendererHandle;
     if (
       canvas === null ||
-      rendererHandle === null ||
-      rendererHandle.runId !== runId ||
-      rendererHandle.attempt !== rendererAttempt ||
+      handle === null ||
+      handle.runId !== runId ||
+      handle.attempt !== rendererAttempt ||
       image === null ||
       sourceWidth <= 0 ||
       sourceHeight <= 0
@@ -317,14 +362,14 @@ function ImageStage({
         context.clearRect(0, 0, size.width, size.height);
         context.drawImage(image, target.x, target.y, target.width, target.height);
         if (visibleSnapshot === null || !showOverlay) {
-          rendererHandle.renderer.clear();
+          handle.renderer.clear();
           lastResetKey.current = null;
           lastSnapshot.current = null;
         } else {
           const resetKey = `${runId}\u0000${sourceUrl ?? ''}`;
           const reset = lastResetKey.current !== resetKey;
           if (reset || lastSnapshot.current !== visibleSnapshot) {
-            await rendererHandle.renderer.update(visibleSnapshot, { reset });
+            await handle.renderer.update(visibleSnapshot, { reset });
             if (cancelled) return;
             lastResetKey.current = resetKey;
             lastSnapshot.current = visibleSnapshot;
@@ -332,7 +377,7 @@ function ImageStage({
           context.save();
           try {
             context.setTransform(dpr, 0, 0, dpr, 0, 0);
-            rendererHandle.renderer.render(context, {
+            handle.renderer.render(context, {
               media: 'image',
               source: { x: 0, y: 0, width: sourceWidth, height: sourceHeight },
               target,
@@ -434,7 +479,13 @@ function VideoStage({
   const renderGeneration = useRef(0);
   const committedUpdate = useRef(false);
   const reportedFailure = useRef<number | null>(null);
-  const [rendererHandle, setRendererHandle] = useState<RendererHandle | null>(null);
+  const rendererHandle = useRendererHandle(
+    runId,
+    rendererAttempt,
+    showOutlines,
+    onRendererInitializing,
+    onRendererError,
+  );
   const [loaded, setLoaded] = useState(false);
   const [duration, setDuration] = useState<number | null>(null);
   const [timeline, setTimeline] = useState<VideoPacketTimeline>(Object.freeze([]));
@@ -501,16 +552,9 @@ function VideoStage({
   );
 
   useEffect(() => {
-    onRendererInitializing(runId, rendererAttempt);
     renderGeneration.current += 1;
     committedUpdate.current = false;
-    const renderer = new SegmentationRenderer(rendererOptions(showOutlines));
-    setRendererHandle({ renderer, runId, attempt: rendererAttempt });
-    return () => {
-      renderGeneration.current += 1;
-      renderer.dispose();
-    };
-  }, [onRendererInitializing, rendererAttempt, runId, showOutlines]);
+  }, [rendererHandle]);
 
   useEffect(() => {
     const handle = rendererHandle;
@@ -791,14 +835,4 @@ function VideoStage({
       </Card>
     </VStack>
   );
-}
-
-export function mediaKindFromFile(file: File): MediaKind | null {
-  const type = file.type.toLowerCase();
-  const name = file.name.toLowerCase();
-  if (type.startsWith('image/')) return 'image';
-  if (type.startsWith('video/')) return 'video';
-  if (/\.(png|jpe?g|webp|gif)$/.test(name)) return 'image';
-  if (/\.(mp4|m4v|mov|webm)$/.test(name)) return 'video';
-  return null;
 }

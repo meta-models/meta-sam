@@ -6,6 +6,8 @@ import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
+import { samApiPlugin } from './server/vite-plugin.ts';
+
 const REACT_PACKAGES = ['react', 'react-dom'] as const;
 
 function packageRoot(moduleId: string, packageName: string): string | null {
@@ -41,29 +43,32 @@ function assertReactSingleton(): Plugin {
 }
 
 export default defineConfig({
+  server: {
+    host: '127.0.0.1',
+    port: 4173,
+    strictPort: true,
+    cors: false,
+  },
+  preview: {
+    host: '127.0.0.1',
+    port: 4173,
+    strictPort: true,
+    cors: false,
+  },
   resolve: {
-    // File dependencies can be reached through /tmp and /private/tmp on macOS.
-    // Always resolve hooks and renderers against the playground React singleton.
     dedupe: [...REACT_PACKAGES],
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client'],
     exclude: ['@meta-sam/react'],
   },
-  plugins: [
-    react({
-      babel: {
-        plugins: [['babel-plugin-react-compiler', { target: '19' }]],
-      },
-    }),
-    assertReactSingleton(),
-  ],
+  plugins: [react({ compiler: {} }), assertReactSingleton(), samApiPlugin()],
   build: {
     outDir: 'dist',
     sourcemap: false,
   },
   test: {
     environment: 'jsdom',
-    include: ['test/**/*.test.{ts,mjs}'],
+    include: ['test/**/*.test.ts'],
   },
 });

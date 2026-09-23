@@ -57,6 +57,7 @@ import {
 } from '@meta-sam/parser';
 import { Code2, Film, Image as ImageIcon, Moon, Sun, SunMoon, X } from 'lucide-react';
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -69,12 +70,13 @@ import {
 import { createCodeExamples, inferMediaMimeType } from './code-examples';
 import { ExampleList } from './ExampleList';
 import { Inspector } from './Inspector';
-import { Stage, mediaKindFromFile } from './Stage';
+import { Stage } from './Stage';
 import { findMediaExample, mediaExamples, type MediaExample } from './examples';
 import {
   appReducer,
   createInitialState,
   MAX_PROMPT_LENGTH,
+  mediaKindFromFile,
   MODEL_ID_PATTERN,
   type AppAction,
   type AppState,
@@ -95,10 +97,11 @@ import {
   type ResponsesTransport,
   type StreamRequest,
 } from './transports';
-import { createSafeUrl, readSafeUrlState } from './url-state';
+import { createSafeUrl, readSafeUrlState, safeUrlSettingsFromState } from './url-state';
 
 const replayTransport = new ReplayTransport(replayScenarios);
 const liveTransport = new LiveTransport();
+const StableTypeahead = memo(Typeahead);
 const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
 const ACCEPTED_FILES =
   'image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm,.png,.jpg,.jpeg,.webp,.gif,.mp4,.m4v,.mov,.webm';
@@ -124,20 +127,6 @@ function initialVisualTheme(): VisualTheme {
   } catch {}
   return 'neutral';
 }
-
-const statusVariant: Record<
-  RunStatus,
-  'neutral' | 'info' | 'success' | 'warning' | 'error'
-> = {
-  idle: 'neutral',
-  ready: 'neutral',
-  streaming: 'info',
-  completed: 'success',
-  incomplete: 'warning',
-  cancelled: 'neutral',
-  refused: 'warning',
-  failed: 'error',
-};
 
 const statusDot: Record<
   RunStatus,
@@ -604,18 +593,15 @@ export function App(): React.JSX.Element {
     return () => controller.abort();
   }, []);
 
+  const safeUrl = createSafeUrl(
+    safeUrlSettingsFromState(state),
+    new URL(window.location.href),
+  );
+  const safeLocation = `${safeUrl.pathname}${safeUrl.search}${safeUrl.hash}`;
+
   useEffect(() => {
-    const next = createSafeUrl(state, new URL(window.location.href));
-    window.history.replaceState(null, '', `${next.pathname}${next.search}${next.hash}`);
-  }, [
-    state.media.id,
-    state.media.origin,
-    state.prompt.text,
-    state.request.model,
-    state.run.transport,
-    state.view.inspectorTab,
-    state.view.showOverlay,
-  ]);
+    window.history.replaceState(null, '', safeLocation);
+  }, [safeLocation]);
 
   useEffect(() => {
     try {
@@ -667,11 +653,21 @@ export function App(): React.JSX.Element {
     dispatch({ type: 'setPrompt', text });
   };
 
-  const setModel = (model: string) => {
-    if (model === state.request.model || !MODEL_ID_PATTERN.test(model)) return;
-    abortActiveRun();
-    dispatch({ type: 'setModel', runId: advanceRunId(), model });
-  };
+  const setModel = useCallback(
+    (model: string) => {
+      if (model === state.request.model || !MODEL_ID_PATTERN.test(model)) return;
+      abortActiveRun();
+      dispatch({ type: 'setModel', runId: advanceRunId(), model });
+    },
+    [abortActiveRun, advanceRunId, state.request.model],
+  );
+
+  const handleModelChange = useCallback(
+    (item: SearchableItem | null) => {
+      if (item !== null) setModel(item.id);
+    },
+    [setModel],
+  );
 
   const selectFile = async (selection: File | File[] | null) => {
     const file = selection instanceof File ? selection : null;
@@ -857,14 +853,12 @@ export function App(): React.JSX.Element {
   const requestRail = (
     <VStack gap={5}>
       <VStack as="section" gap={3}>
-        <Typeahead
+        <StableTypeahead
           label="Model"
           description="Choose any model returned by the Model API."
           searchSource={modelSource}
           value={selectedModel}
-          onChange={(item) => {
-            if (item !== null) setModel(item.id);
-          }}
+          onChange={handleModelChange}
           placeholder="Search models"
           hasEntriesOnFocus
           hasClear={false}

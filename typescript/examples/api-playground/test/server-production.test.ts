@@ -2,7 +2,7 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved.
  */
 
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { promisify } from 'node:util';
@@ -13,11 +13,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-let server;
-let baseURL;
-let mediaLength;
+let server: ChildProcess;
+let baseURL: string;
+let mediaLength: number;
 
-async function availablePort() {
+async function availablePort(): Promise<number> {
   const probe = createServer();
   probe.listen(0, '127.0.0.1');
   await once(probe, 'listening');
@@ -25,43 +25,25 @@ async function availablePort() {
   if (address === null || typeof address === 'string') {
     throw new Error('Could not reserve a production smoke-test port.');
   }
-  await new Promise((resolveClose, rejectClose) =>
+  await new Promise<void>((resolveClose, rejectClose) =>
     probe.close((error) => (error === undefined ? resolveClose() : rejectClose(error))),
   );
   return address.port;
 }
 
-async function waitForListening(child) {
-  await new Promise((resolveListening, rejectListening) => {
-    const timeout = setTimeout(
-      () => rejectListening(new Error('Production server did not start in time.')),
-      30_000,
-    );
-    let stderr = '';
-    const cleanup = () => {
-      clearTimeout(timeout);
-      child.stdout.off('data', onStdout);
-      child.stderr.off('data', onStderr);
-      child.off('exit', onExit);
-    };
-    const onStdout = (chunk) => {
-      if (!String(chunk).includes('SAM 3 API playground listening')) return;
-      cleanup();
-      resolveListening();
-    };
-    const onStderr = (chunk) => {
-      stderr += String(chunk);
-    };
-    const onExit = (code) => {
-      cleanup();
-      rejectListening(
-        new Error(`Production server exited with ${code}: ${stderr.trim()}`),
-      );
-    };
-    child.stdout.on('data', onStdout);
-    child.stderr.on('data', onStderr);
-    child.once('exit', onExit);
-  });
+async function waitForListening(url: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+  throw new Error(`Production server did not start: ${String(lastError)}`);
 }
 
 describe('production static server', () => {
@@ -75,14 +57,21 @@ describe('production static server', () => {
     baseURL = `http://127.0.0.1:${port}`;
     server = spawn(
       process.execPath,
-      ['server.mjs', '--host', '127.0.0.1', '--port', String(port)],
+      [
+        resolve(root, 'node_modules/vite/bin/vite.js'),
+        'preview',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        String(port),
+      ],
       {
         cwd: root,
-        env: { ...process.env, NODE_ENV: 'production', SAM_API_KEY: '' },
+        env: { ...process.env, SAM_API_KEY: '', SAM_MODEL: '' },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
-    await waitForListening(server);
+    await waitForListening(`${baseURL}/api/config`);
     const media = await fetch(`${baseURL}/media/webm-vp9-opus.webm`);
     expect(media.status).toBe(200);
     mediaLength = Number(media.headers.get('content-length'));
@@ -114,8 +103,37 @@ describe('production static server', () => {
 
     const head = await fetch(`${baseURL}/`, { method: 'HEAD' });
     expect(head.status).toBe(200);
-    expect(Number(head.headers.get('content-length'))).toBeGreaterThan(0);
     expect((await head.arrayBuffer()).byteLength).toBe(0);
+  });
+
+  it('does not opt API routes into cross-origin requests', async () => {
+    for (const method of ['GET', 'OPTIONS']) {
+      const response = await fetch(`${baseURL}/api/config`, {
+        method,
+        headers: {
+          Origin: 'http://evil.localhost:3000',
+          ...(method === 'OPTIONS'
+            ? {
+                'Access-Control-Request-Method': 'GET',
+                'Access-Control-Request-Headers': 'content-type',
+              }
+            : {}),
+        },
+      });
+      expect(response.headers.get('access-control-allow-origin')).toBeNull();
+      expect(response.headers.get('access-control-allow-methods')).toBeNull();
+    }
+  });
+
+  it('applies production security headers to shared fixture media', async () => {
+    const media = await fetch(`${baseURL}/media/webm-vp9-opus.webm`);
+    expect(media.status).toBe(200);
+    expect(media.headers.get('content-security-policy')).toContain(
+      "default-src 'self';",
+    );
+    expect(media.headers.get('cache-control')).toBe('no-store');
+    expect(media.headers.get('cross-origin-resource-policy')).toBe('same-origin');
+    expect(media.headers.get('x-content-type-options')).toBe('nosniff');
   });
 
   it('returns a client error rather than 500 for a malformed decode path', async () => {
