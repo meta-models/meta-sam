@@ -13,14 +13,24 @@ import {
   fetchModelIds,
   normalizeSAMPrompt,
   uploadMediaFile,
-} from '../openai-request.mjs';
+} from '../server/openai-request.ts';
 
-const config = {
+import type {
+  ImageRelayInput,
+  ServerConfig,
+  ValidatedMedia,
+  VideoRelayInput,
+} from '../server/server-core.ts';
+
+const config: ServerConfig = {
   apiKey: 'server-only-key',
   baseURL: 'https://api.meta.ai/v1',
+  configured: true,
+  host: '127.0.0.1',
   model: 'configured-model',
+  port: 4173,
 };
-const imageInput = {
+const imageInput: ImageRelayInput = {
   prompt: 'rectangular panel',
   model: 'sam-3.1',
   kind: 'image',
@@ -31,19 +41,41 @@ const imageInput = {
     bytes: Buffer.from('png'),
   },
 };
-const videoMedia = {
+const videoMedia: ValidatedMedia = {
   kind: 'video',
   mimeType: 'video/mp4',
   filename: 'clip.mp4',
   bytes: Buffer.from('mp4-bytes'),
 };
-const videoInput = {
+const videoInput: VideoRelayInput = {
   prompt: 'apple',
   kind: 'video',
   fileId: 'file-987',
 };
 
-function unaryResponse(overrides = {}) {
+type FetchCall = [input: string | URL | Request, init?: RequestInit];
+
+function fetchCall(mock: { mock: { calls: FetchCall[] } }, index = 0): FetchCall {
+  const call = mock.mock.calls[index];
+  if (call === undefined) throw new Error(`Missing fetch call ${index}.`);
+  return call;
+}
+
+function fetchUrl(input: string | URL | Request): URL {
+  if (input instanceof Request) return new URL(input.url);
+  return input instanceof URL ? input : new URL(input);
+}
+
+function fetchHeaders(init: RequestInit | undefined): Headers {
+  return new Headers(init?.headers);
+}
+
+function jsonBody(init: RequestInit | undefined): Record<string, unknown> {
+  if (typeof init?.body !== 'string') throw new TypeError('Expected a JSON body.');
+  return JSON.parse(init.body) as Record<string, unknown>;
+}
+
+function unaryResponse(overrides: Record<string, unknown> = {}): Response {
   return new Response(
     JSON.stringify({
       status: 'completed',
@@ -90,6 +122,8 @@ describe('Model API Responses request', () => {
     expect(upload.init.body).toBeInstanceOf(FormData);
     expect(upload.init.body.get('purpose')).toBe('user_data');
     const file = upload.init.body.get('file');
+    expect(file).toBeInstanceOf(File);
+    if (!(file instanceof File)) throw new TypeError('Expected an uploaded File.');
     expect(file.name).toBe('clip.mp4');
     expect(file.type).toBe('video/mp4');
 
@@ -115,7 +149,7 @@ describe('Model API Responses request', () => {
   });
 
   it('fetches and validates a bounded unfiltered model list', async () => {
-    const fetchImpl = vi.fn(() =>
+    const fetchImpl = vi.fn<typeof fetch>(() =>
       Promise.resolve(
         new Response(
           JSON.stringify({
@@ -129,8 +163,9 @@ describe('Model API Responses request', () => {
       'zeta-model',
       'beta-model',
     ]);
-    expect(fetchImpl.mock.calls[0][0].href).toBe('https://api.meta.ai/v1/models');
-    expect(fetchImpl.mock.calls[0][1].headers.Authorization).toBe(
+    const [modelsInput, modelsInit] = fetchCall(fetchImpl);
+    expect(fetchUrl(modelsInput).href).toBe('https://api.meta.ai/v1/models');
+    expect(fetchHeaders(modelsInit).get('Authorization')).toBe(
       'Bearer server-only-key',
     );
 
@@ -138,7 +173,7 @@ describe('Model API Responses request', () => {
       [{ id: 'invalid model' }],
       Array.from({ length: 501 }, () => ({ id: 'same' })),
     ]) {
-      const invalid = vi.fn(() =>
+      const invalid = vi.fn<typeof fetch>(() =>
         Promise.resolve(new Response(JSON.stringify({ data }))),
       );
       await expect(fetchModelIds(config, undefined, invalid)).rejects.toThrow(
@@ -148,7 +183,7 @@ describe('Model API Responses request', () => {
   });
 
   it('rejects an oversized model response without exposing its body', async () => {
-    const fetchImpl = vi.fn(() =>
+    const fetchImpl = vi.fn<typeof fetch>(() =>
       Promise.resolve(
         new Response(JSON.stringify({ data: [], secret: 'x'.repeat(300_000) })),
       ),
@@ -159,7 +194,7 @@ describe('Model API Responses request', () => {
   });
 
   it('rejects upload responses without a well-formed file id', async () => {
-    const fetchImpl = vi.fn(() =>
+    const fetchImpl = vi.fn<typeof fetch>(() =>
       Promise.resolve(
         new Response(JSON.stringify({ id: 'nope' }), {
           headers: { 'Content-Type': 'application/json' },
@@ -169,7 +204,7 @@ describe('Model API Responses request', () => {
     await expect(
       uploadMediaFile(config, videoMedia, undefined, fetchImpl),
     ).rejects.toThrow(/invalid file handle/);
-    const rejected = vi.fn(() =>
+    const rejected = vi.fn<typeof fetch>(() =>
       Promise.resolve(new Response('denied', { status: 403 })),
     );
     await expect(
@@ -226,7 +261,7 @@ describe('Model API Responses request', () => {
   });
 
   it('dispatches image inputs to the unary path and video handles straight to the stream', async () => {
-    const imageFetch = vi.fn(() => Promise.resolve(unaryResponse()));
+    const imageFetch = vi.fn<typeof fetch>(() => Promise.resolve(unaryResponse()));
     const controller = new AbortController();
     const image = await createSAMResponsesStream(
       config,
@@ -236,9 +271,10 @@ describe('Model API Responses request', () => {
     );
     expect(image.headers.get('content-type')).toContain('application/x-ndjson');
     expect(imageFetch).toHaveBeenCalledOnce();
-    expect(JSON.parse(imageFetch.mock.calls[0][1].body).stream).toBe(false);
+    const [, imageInit] = fetchCall(imageFetch);
+    expect(jsonBody(imageInit).stream).toBe(false);
 
-    const videoFetch = vi.fn(() =>
+    const videoFetch = vi.fn<typeof fetch>(() =>
       Promise.resolve(
         new Response('data: {"type":"response.completed"}\n\n', {
           headers: { 'Content-Type': 'text/event-stream' },
@@ -253,18 +289,22 @@ describe('Model API Responses request', () => {
     );
     expect(video.headers.get('content-type')).toContain('text/event-stream');
     expect(videoFetch).toHaveBeenCalledOnce();
-    expect(videoFetch.mock.calls[0][0].pathname).toBe('/v1/responses');
-    const responsesBody = JSON.parse(videoFetch.mock.calls[0][1].body);
+    const [videoInputUrl, videoInit] = fetchCall(videoFetch);
+    expect(fetchUrl(videoInputUrl).pathname).toBe('/v1/responses');
+    const responsesBody = jsonBody(videoInit) as {
+      stream: boolean;
+      input: Array<{ content: Array<Record<string, unknown>> }>;
+    };
     expect(responsesBody.stream).toBe(true);
-    expect(responsesBody.input[0].content[1]).toEqual({
+    expect(responsesBody.input[0]?.content[1]).toEqual({
       type: 'input_video',
       file_id: 'file-987',
     });
-    expect(videoFetch.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(videoInit?.signal).toBe(controller.signal);
   });
 
   it('surfaces the upstream status when a video handle is rejected', async () => {
-    const rejected = vi.fn(() =>
+    const rejected = vi.fn<typeof fetch>(() =>
       Promise.resolve(new Response('missing file', { status: 404 })),
     );
     await expect(

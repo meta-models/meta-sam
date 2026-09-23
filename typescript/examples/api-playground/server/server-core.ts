@@ -3,6 +3,12 @@
  */
 
 import { once } from 'node:events';
+import type {
+  IncomingHttpHeaders,
+  IncomingMessage,
+  OutgoingHttpHeaders,
+  ServerResponse,
+} from 'node:http';
 import { isIP } from 'node:net';
 
 export const MAX_MEDIA_SIZE = 20 * 1024 * 1024;
@@ -34,8 +40,74 @@ const allowedImageTypes = new Map([
 ]);
 const allowedVideoTypes = new Map([['video/mp4', 'video/mp4']]);
 
+type MediaKind = 'image' | 'video';
+
+type MultipartMedia = {
+  bytes: Buffer;
+  filename?: string;
+  contentType?: string;
+};
+
+export type MultipartFields = {
+  prompt?: string;
+  model?: string;
+  file_id?: string;
+  media?: MultipartMedia;
+};
+
+export type ValidatedMedia = Readonly<
+  | {
+      kind: 'image';
+      mimeType: string;
+      filename: string;
+      bytes: Buffer;
+    }
+  | {
+      kind: 'video';
+      mimeType: string;
+      filename: string;
+      bytes: Buffer;
+    }
+>;
+
+export type ImageRelayInput = Readonly<{
+  prompt: string;
+  model?: string;
+  kind: 'image';
+  media: ValidatedMedia & { kind: 'image' };
+}>;
+
+export type VideoRelayInput = Readonly<{
+  prompt: string;
+  model?: string;
+  kind: 'video';
+  fileId: string;
+}>;
+
+export type RelayInput = ImageRelayInput | VideoRelayInput;
+
+export type ServerConfig = Readonly<{
+  apiKey: string | null;
+  baseURL: string;
+  configured: boolean;
+  model: string | null;
+  port: number;
+  host: string;
+}>;
+
+type ResponseEvent = Record<string, unknown> & { type: string };
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 export class HttpError extends Error {
-  constructor(status, code, message) {
+  readonly status: number;
+  readonly code: string;
+
+  constructor(status: number, code: string, message: string) {
     super(message);
     this.name = 'HttpError';
     this.status = status;
@@ -50,9 +122,19 @@ export class StreamIdleTimeoutError extends Error {
   }
 }
 
-function safeInteger(value, name, minimum, maximum) {
+function safeInteger(
+  value: unknown,
+  name: string,
+  minimum: number,
+  maximum: number,
+): number {
   const parsed = typeof value === 'string' && value.length > 0 ? Number(value) : value;
-  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+  if (
+    typeof parsed !== 'number' ||
+    !Number.isSafeInteger(parsed) ||
+    parsed < minimum ||
+    parsed > maximum
+  ) {
     throw new TypeError(
       `${name} must be an integer from ${minimum} through ${maximum}.`,
     );
@@ -60,7 +142,7 @@ function safeInteger(value, name, minimum, maximum) {
   return parsed;
 }
 
-function validateBaseUrl(value) {
+function validateBaseUrl(value: string): string {
   let parsed;
   try {
     parsed = new URL(value);
@@ -82,14 +164,14 @@ function validateBaseUrl(value) {
   return parsed.href.replace(/\/$/, '');
 }
 
-function normalizedHostname(value) {
+function normalizedHostname(value: string): string {
   const trimmed = value.trim().toLowerCase();
   return trimmed.startsWith('[') && trimmed.endsWith(']')
     ? trimmed.slice(1, -1)
     : trimmed;
 }
 
-export function isLoopbackHost(value) {
+export function isLoopbackHost(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   const hostname = normalizedHostname(value);
   if (
@@ -106,7 +188,7 @@ export function isLoopbackHost(value) {
   );
 }
 
-function validateBindHost(value) {
+function validateBindHost(value: unknown): string {
   if (typeof value !== 'string') {
     throw new TypeError('--host must be a hostname or address.');
   }
@@ -128,11 +210,17 @@ function validateBindHost(value) {
   return host;
 }
 
-function optionalEnvironmentValue(env, name, maximumLength) {
+function optionalEnvironmentValue(
+  env: Record<string, string | undefined>,
+  name: string,
+  maximumLength: number,
+): string | null {
   const value = env[name]?.trim() || null;
   if (
     value !== null &&
-    (value.length > maximumLength || /[\u0000-\u001f\u007f]/.test(value))
+    (value.length > maximumLength ||
+      // oxlint-disable-next-line no-control-regex -- Reject all ASCII control characters in environment values.
+      /[\u0000-\u001f\u007f]/.test(value))
   ) {
     throw new TypeError(
       `${name} must contain 1 through ${maximumLength} printable characters.`,
@@ -141,7 +229,10 @@ function optionalEnvironmentValue(env, name, maximumLength) {
   return value;
 }
 
-export function readServerConfig(env, overrides = {}) {
+export function readServerConfig(
+  env: Record<string, string | undefined>,
+  overrides: { host?: string; port?: string | number } = {},
+): ServerConfig {
   const apiKey = optionalEnvironmentValue(env, 'SAM_API_KEY', 8_192);
   const model = optionalEnvironmentValue(env, 'SAM_MODEL', MAX_MODEL_ID_LENGTH);
   if (model !== null && !MODEL_ID_PATTERN.test(model)) {
@@ -165,11 +256,11 @@ export function readServerConfig(env, overrides = {}) {
   });
 }
 
-function hasBytes(bytes, offset, expected) {
+function hasBytes(bytes: Buffer, offset: number, expected: readonly number[]): boolean {
   return expected.every((value, index) => bytes[offset + index] === value);
 }
 
-function isIsoBmff(bytes) {
+function isIsoBmff(bytes: Buffer): boolean {
   return (
     bytes.length >= 12 &&
     hasBytes(bytes, 4, [0x66, 0x74, 0x79, 0x70]) &&
@@ -181,7 +272,9 @@ function isIsoBmff(bytes) {
  * Sniffs the media kind from the leading bytes rather than trusting the
  * declared type. Returns the canonical MIME type or null when unsupported.
  */
-export function detectMediaType(bytes) {
+export function detectMediaType(
+  bytes: Buffer,
+): { kind: MediaKind; mimeType: string } | null {
   if (hasBytes(bytes, 0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
     return { kind: 'image', mimeType: 'image/png' };
   }
@@ -204,10 +297,11 @@ export function detectMediaType(bytes) {
   return null;
 }
 
-function safeFilename(value, fallback) {
+function safeFilename(value: unknown, fallback: string): string {
   const cleaned =
     typeof value === 'string'
       ? value
+          // oxlint-disable-next-line no-control-regex -- Remove ASCII controls and filename delimiters before forwarding.
           .replace(/[\u0000-\u001f\u007f"\\/]/g, '')
           .trim()
           .slice(0, MAX_FILENAME_LENGTH)
@@ -219,8 +313,12 @@ function safeFilename(value, fallback) {
  * Validates one decoded `media` part: the declared MIME type must agree with
  * the sniffed bytes, and the sniffed type wins.
  */
-function validateMediaPart(media) {
-  if (typeof media !== 'object' || media === null || !Buffer.isBuffer(media.bytes)) {
+function validateMediaPart(value: unknown): ValidatedMedia {
+  if (typeof value !== 'object' || value === null) {
+    throw new HttpError(400, 'invalid_media', 'The media payload is missing.');
+  }
+  const media = value as Partial<MultipartMedia>;
+  if (!Buffer.isBuffer(media.bytes)) {
     throw new HttpError(400, 'invalid_media', 'The media payload is missing.');
   }
   if (media.bytes.length === 0) {
@@ -261,7 +359,7 @@ function validateMediaPart(media) {
   });
 }
 
-function validatePrompt(value) {
+function validatePrompt(value: unknown): string {
   const prompt = typeof value === 'string' ? value.trim() : '';
   if (prompt.length === 0 || prompt.length > MAX_PROMPT_LENGTH) {
     throw new HttpError(
@@ -273,7 +371,7 @@ function validatePrompt(value) {
   return prompt;
 }
 
-function validateOptionalModel(value) {
+function validateOptionalModel(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   const model = typeof value === 'string' ? value.trim() : '';
   if (!MODEL_ID_PATTERN.test(model)) {
@@ -287,7 +385,9 @@ function validateOptionalModel(value) {
  * is accepted: the Files API handle exists for the streaming video path, and an
  * image handle could never be referenced.
  */
-export function validateUploadInput(fields) {
+export function validateUploadInput(fields: MultipartFields): Readonly<{
+  media: ValidatedMedia;
+}> {
   const media = validateMediaPart(fields.media);
   if (media.kind !== 'video') {
     throw new HttpError(415, 'unsupported_media', 'Upload an MP4 video.');
@@ -300,7 +400,7 @@ export function validateUploadInput(fields) {
  * their bytes inline; video carries the opaque handle returned by `/api/files`
  * and never the bytes.
  */
-export function validateMediaInput(fields) {
+export function validateMediaInput(fields: MultipartFields): RelayInput {
   const prompt = validatePrompt(fields.prompt);
   const model = validateOptionalModel(fields.model);
   const hasFileId = fields.file_id !== undefined;
@@ -339,7 +439,7 @@ export function validateMediaInput(fields) {
   });
 }
 
-export function assertMultipartContentType(headers) {
+export function assertMultipartContentType(headers: IncomingHttpHeaders): string {
   const value = headers['content-type'];
   const contentType = Array.isArray(value) ? value[0] : value;
   if (typeof contentType !== 'string' || !MULTIPART_CONTENT_TYPE.test(contentType)) {
@@ -361,7 +461,10 @@ export function assertMultipartContentType(headers) {
   return boundary;
 }
 
-export function readRawBody(request, limit = MAX_REQUEST_SIZE) {
+export function readRawBody(
+  request: IncomingMessage,
+  limit = MAX_REQUEST_SIZE,
+): Promise<Buffer> {
   const declared = Number(request.headers['content-length']);
   if (Number.isFinite(declared) && declared > limit) {
     request.resume();
@@ -369,8 +472,8 @@ export function readRawBody(request, limit = MAX_REQUEST_SIZE) {
       new HttpError(413, 'request_too_large', 'The request is too large.'),
     );
   }
-  return new Promise((resolve, reject) => {
-    const chunks = [];
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
     let size = 0;
     let settled = false;
     const cleanup = () => {
@@ -379,13 +482,13 @@ export function readRawBody(request, limit = MAX_REQUEST_SIZE) {
       request.off('aborted', onAborted);
       request.off('error', onError);
     };
-    const finish = (callback) => {
+    const finish = (callback: () => void): void => {
       if (settled) return;
       settled = true;
       cleanup();
       callback();
     };
-    const onData = (chunk) => {
+    const onData = (chunk: Buffer | string): void => {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       size += bytes.length;
       if (size > limit) {
@@ -414,8 +517,14 @@ export function readRawBody(request, limit = MAX_REQUEST_SIZE) {
   });
 }
 
-function parseDisposition(headerBlock) {
-  const headers = new Map();
+type MultipartDisposition = {
+  name: string;
+  filename?: string;
+  contentType?: string;
+};
+
+function parseDisposition(headerBlock: string): MultipartDisposition | null {
+  const headers = new Map<string, string>();
   for (const line of headerBlock.split('\r\n')) {
     const separator = line.indexOf(':');
     if (separator <= 0) continue;
@@ -440,9 +549,13 @@ function parseDisposition(headerBlock) {
  * Decodes a `multipart/form-data` body into its accepted fields. Only the
  * fields the route expects are accepted; anything else fails closed.
  */
-export function parseMultipartBody(body, boundary, accepted = responsesFields) {
+export function parseMultipartBody(
+  body: Buffer,
+  boundary: string,
+  accepted: ReadonlySet<string> = responsesFields,
+): MultipartFields {
   const delimiter = Buffer.from(`--${boundary}`);
-  const fields = {};
+  const fields: MultipartFields = {};
   let cursor = body.indexOf(delimiter);
   if (cursor !== 0 && !(cursor === 2 && body[0] === 0x0d && body[1] === 0x0a)) {
     throw new HttpError(400, 'invalid_request', 'The multipart body is malformed.');
@@ -499,7 +612,9 @@ export function parseMultipartBody(body, boundary, accepted = responsesFields) {
         throw new HttpError(400, code, `The ${part.name} field is invalid.`);
       }
       try {
-        fields[part.name] = new TextDecoder('utf-8', { fatal: true }).decode(data);
+        fields[part.name as 'prompt' | 'model' | 'file_id'] = new TextDecoder('utf-8', {
+          fatal: true,
+        }).decode(data);
       } catch {
         throw new HttpError(400, code, `The ${part.name} field is invalid.`);
       }
@@ -509,33 +624,49 @@ export function parseMultipartBody(body, boundary, accepted = responsesFields) {
   return fields;
 }
 
-function lane(event) {
+function lane(
+  event: ResponseEvent,
+): { item_id: string; output_index: number; content_index: number } | undefined {
+  const outputIndex = event.output_index;
+  const contentIndex = event.content_index;
   return typeof event.item_id === 'string' &&
     event.item_id.length > 0 &&
-    Number.isSafeInteger(event.output_index) &&
-    event.output_index >= 0 &&
-    Number.isSafeInteger(event.content_index) &&
-    event.content_index >= 0
+    typeof outputIndex === 'number' &&
+    Number.isSafeInteger(outputIndex) &&
+    outputIndex >= 0 &&
+    typeof contentIndex === 'number' &&
+    Number.isSafeInteger(contentIndex) &&
+    contentIndex >= 0
     ? {
         item_id: event.item_id,
-        output_index: event.output_index,
-        content_index: event.content_index,
+        output_index: outputIndex,
+        content_index: contentIndex,
       }
     : undefined;
 }
 
-function outputTextEvent(event, field) {
+function outputTextEvent(
+  event: ResponseEvent,
+  field: 'delta' | 'text' | 'refusal',
+): Record<string, unknown> | undefined {
   const identity = lane(event);
   return identity !== undefined && typeof event[field] === 'string'
     ? { type: event.type, [field]: event[field], ...identity }
     : undefined;
 }
 
-export function projectResponsesEvent(value) {
-  if (typeof value !== 'object' || value === null || typeof value.type !== 'string') {
+export function projectResponsesEvent(
+  value: unknown,
+): Record<string, unknown> | null | undefined {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('type' in value) ||
+    typeof value.type !== 'string'
+  ) {
     throw new TypeError('The upstream stream emitted an invalid event.');
   }
-  const event = value;
+  const event = value as ResponseEvent;
   switch (event.type) {
     case 'response.output_text.delta':
       return outputTextEvent(event, 'delta');
@@ -549,9 +680,8 @@ export function projectResponsesEvent(value) {
       // The production stream closes a text lane with `content_part.done` and
       // never emits `output_text.done`; the parser requires the latter.
       const identity = lane(event);
-      const part = event.part;
-      if (identity === undefined || typeof part !== 'object' || part === null)
-        return null;
+      const part = objectRecord(event.part);
+      if (identity === undefined || part === null) return null;
       if (part.type === 'output_text' && typeof part.text === 'string') {
         return { type: 'response.output_text.done', text: part.text, ...identity };
       }
@@ -563,7 +693,9 @@ export function projectResponsesEvent(value) {
     case 'response.completed':
       return { type: event.type };
     case 'response.incomplete': {
-      const reason = event.response?.incomplete_details?.reason;
+      const response = objectRecord(event.response);
+      const incompleteDetails = objectRecord(response?.incomplete_details);
+      const reason = incompleteDetails?.reason;
       const safeReason =
         reason === 'max_output_tokens' || reason === 'content_filter'
           ? reason
@@ -592,13 +724,18 @@ export function projectResponsesEvent(value) {
   }
 }
 
-function waitWithIdleLimit(operation, signal, idleLimit, onIdle) {
+function waitWithIdleLimit<T>(
+  operation: () => T | PromiseLike<T>,
+  signal: AbortSignal,
+  idleLimit: number,
+  onIdle?: () => void,
+): Promise<T> {
   if (signal.aborted) return Promise.reject(signal.reason);
-  let timer;
-  let onAbort;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
   const running = Promise.resolve().then(operation);
   void running.catch(() => undefined);
-  const interrupted = new Promise((_, reject) => {
+  const interrupted = new Promise<never>((_, reject) => {
     onAbort = () => reject(signal.reason ?? new Error('The request was cancelled.'));
     signal.addEventListener('abort', onAbort, { once: true });
     timer = setTimeout(() => {
@@ -607,18 +744,18 @@ function waitWithIdleLimit(operation, signal, idleLimit, onIdle) {
     }, idleLimit);
   });
   return Promise.race([running, interrupted]).finally(() => {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
     if (onAbort !== undefined) signal.removeEventListener('abort', onAbort);
   });
 }
 
 async function* parseUpstreamResponse(
-  response,
-  signal,
-  idleLimit,
-  onIdle,
+  response: Response,
+  signal: AbortSignal,
+  idleLimit: number,
+  onIdle: (() => void) | undefined,
   eventLimit = MAX_EVENT_SIZE,
-) {
+): AsyncGenerator<unknown> {
   if (!response.ok || response.body === null) {
     throw new HttpError(
       502,
@@ -646,12 +783,12 @@ async function* parseUpstreamResponse(
   let complete = false;
   try {
     for (;;) {
-      const item = await waitWithIdleLimit(
+      const item = (await waitWithIdleLimit(
         () => reader.read(),
         signal,
         idleLimit,
         onIdle,
-      );
+      )) as { done: boolean; value: Uint8Array };
       if (item.done) break;
       totalBytes += item.value.byteLength;
       if (totalBytes > MAX_STREAM_SIZE)
@@ -715,7 +852,11 @@ async function* parseUpstreamResponse(
   }
 }
 
-export async function writeWithBackpressure(response, chunk, signal) {
+export async function writeWithBackpressure(
+  response: ServerResponse,
+  chunk: string | Uint8Array,
+  signal: AbortSignal,
+): Promise<void> {
   if (signal.aborted) throw signal.reason ?? new Error('The response was cancelled.');
   if (response.destroyed || response.writableEnded) {
     throw new Error('The response is no longer writable.');
@@ -725,12 +866,16 @@ export async function writeWithBackpressure(response, chunk, signal) {
 }
 
 export async function relayResponsesEvents(
-  upstreamResponse,
-  response,
-  signal,
-  { idleLimit = STREAM_IDLE_LIMIT, onIdle, eventLimit = MAX_EVENT_SIZE } = {},
+  upstreamResponse: Response,
+  response: ServerResponse,
+  signal: AbortSignal,
+  {
+    idleLimit = STREAM_IDLE_LIMIT,
+    onIdle,
+    eventLimit = MAX_EVENT_SIZE,
+  }: { idleLimit?: number; onIdle?: () => void; eventLimit?: number } = {},
 ) {
-  const finalizedLanes = new Set();
+  const finalizedLanes = new Set<string>();
   for await (const event of parseUpstreamResponse(
     upstreamResponse,
     signal,
@@ -747,6 +892,13 @@ export async function relayResponsesEvents(
       projected.type === 'response.output_text.done' ||
       projected.type === 'response.refusal.done'
     ) {
+      if (
+        !('item_id' in projected) ||
+        !('output_index' in projected) ||
+        !('content_index' in projected)
+      ) {
+        throw new TypeError('The finalized event is missing its lane identity.');
+      }
       const key = `${projected.item_id}\u0000${projected.output_index}\u0000${projected.content_index}`;
       if (finalizedLanes.has(key)) continue;
       finalizedLanes.add(key);
@@ -755,7 +907,11 @@ export async function relayResponsesEvents(
   }
 }
 
-export function bindDownstreamCancellation(request, response, controller) {
+export function bindDownstreamCancellation(
+  request: IncomingMessage,
+  response: ServerResponse,
+  controller: AbortController,
+): () => void {
   const onAborted = () => controller.abort(new Error('The request was aborted.'));
   const onClose = () => {
     if (!response.writableEnded)
@@ -769,11 +925,14 @@ export function bindDownstreamCancellation(request, response, controller) {
   };
 }
 
-export function applySecurityHeaders(response, development = false) {
+const ASTRYX_HIGHLIGHT_STYLES_HASH =
+  "'sha256-W8DZlwvt7jPAC5BancWmJ6mGbNdefbHBPaUSM8MxNfQ='";
+
+export function applySecurityHeaders(response: ServerResponse): void {
   response.setHeader('Cache-Control', 'no-store');
   response.setHeader(
     'Content-Security-Policy',
-    `default-src 'self'; base-uri 'none'; connect-src 'self'${development ? ' ws: wss:' : ''}; frame-ancestors 'none'; form-action 'self'; img-src 'self' blob: data:; object-src 'none'; script-src 'self'; style-src 'self'${development ? " 'unsafe-inline'" : ''}`,
+    `default-src 'self'; base-uri 'none'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' blob: data:; object-src 'none'; script-src 'self'; style-src 'self' ${ASTRYX_HIGHLIGHT_STYLES_HASH}`,
   );
   response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   response.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
@@ -782,7 +941,13 @@ export function applySecurityHeaders(response, development = false) {
   response.setHeader('X-Content-Type-Options', 'nosniff');
 }
 
-function send(response, status, contentType, body, extraHeaders = {}) {
+function send(
+  response: ServerResponse,
+  status: number,
+  contentType: string,
+  body: string,
+  extraHeaders: OutgoingHttpHeaders = {},
+): void {
   applySecurityHeaders(response);
   response.writeHead(status, {
     'Content-Type': contentType,
@@ -792,7 +957,7 @@ function send(response, status, contentType, body, extraHeaders = {}) {
   response.end(body);
 }
 
-function sendJsonError(response, error) {
+function sendJsonError(response: ServerResponse, error: unknown): void {
   const status = error instanceof HttpError ? error.status : 500;
   const code = error instanceof HttpError ? error.code : 'internal_error';
   const message =
@@ -807,7 +972,7 @@ function sendJsonError(response, error) {
   );
 }
 
-function hasExactlyOneRawHeader(request, name) {
+function hasExactlyOneRawHeader(request: IncomingMessage, name: string): boolean {
   if (!Array.isArray(request.rawHeaders) || request.rawHeaders.length % 2 !== 0)
     return false;
   let count = 0;
@@ -817,7 +982,9 @@ function hasExactlyOneRawHeader(request, name) {
   return count === 1;
 }
 
-function parseHostHeader(value) {
+function parseHostHeader(
+  value: string | undefined,
+): { host: string; hostname: string } | null {
   if (
     typeof value !== 'string' ||
     value.length === 0 ||
@@ -843,7 +1010,10 @@ function parseHostHeader(value) {
   }
 }
 
-export function authorizeSameOrigin(request, config) {
+export function authorizeSameOrigin(
+  request: IncomingMessage,
+  config: ServerConfig,
+): boolean {
   if (!hasExactlyOneRawHeader(request, 'host')) return false;
   const authority = parseHostHeader(request.headers.host);
   if (authority === null) return false;
@@ -868,6 +1038,26 @@ export function authorizeSameOrigin(request, config) {
   }
 }
 
+type ModelCache = {
+  expiresAt: number;
+  models: readonly string[];
+};
+
+type ApiHandlerOptions = {
+  config: ServerConfig;
+  createResponsesStream?: (input: RelayInput, signal: AbortSignal) => Promise<Response>;
+  uploadMedia?: (media: ValidatedMedia, signal: AbortSignal) => Promise<string>;
+  listModels?: (signal?: AbortSignal) => Promise<string[]>;
+  streamIdleLimit?: number;
+  modelCacheTtl?: number;
+  now?: () => number;
+};
+
+type ApiHandler = (
+  request: IncomingMessage,
+  response: ServerResponse,
+) => Promise<boolean>;
+
 /**
  * Maps an upstream start failure onto the relay's error contract. A 404 or 410
  * on a video run indicates that the opaque Files handle is no longer available;
@@ -875,8 +1065,14 @@ export function authorizeSameOrigin(request, config) {
  * must not trigger a redundant upload retry. Authentication and rate limiting
  * are never the handle's fault.
  */
-function upstreamStartError(error, input) {
-  const status = error?.status;
+function upstreamStartError(error: unknown, input: RelayInput): HttpError {
+  const status =
+    typeof error === 'object' &&
+    error !== null &&
+    'status' in error &&
+    typeof error.status === 'number'
+      ? error.status
+      : undefined;
   if (input.kind === 'video' && (status === 404 || status === 410)) {
     return new HttpError(
       409,
@@ -899,10 +1095,10 @@ export function createApiHandler({
   streamIdleLimit = STREAM_IDLE_LIMIT,
   modelCacheTtl = MODEL_CACHE_TTL,
   now = Date.now,
-}) {
-  let modelCache = null;
+}: ApiHandlerOptions): ApiHandler {
+  let modelCache: ModelCache | null = null;
 
-  async function cachedModels(signal) {
+  async function cachedModels(signal?: AbortSignal): Promise<readonly string[]> {
     const timestamp = now();
     if (modelCache !== null && modelCache.expiresAt > timestamp) {
       return modelCache.models;
@@ -910,7 +1106,7 @@ export function createApiHandler({
     if (typeof listModels !== 'function') {
       throw new HttpError(503, 'not_configured', 'Live mode is not configured.');
     }
-    let models;
+    let models: string[];
     try {
       models = await listModels(signal);
     } catch {
@@ -928,7 +1124,10 @@ export function createApiHandler({
     return normalized;
   }
 
-  async function handleFileUpload(request, response) {
+  async function handleFileUpload(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
     const downstream = new AbortController();
     const upstream = new AbortController();
     const forward = () => upstream.abort(downstream.signal.reason);
@@ -983,7 +1182,10 @@ export function createApiHandler({
     }
   }
 
-  return async function handleApi(request, response) {
+  return async function handleApi(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<boolean> {
     let url;
     try {
       url = new URL(request.url ?? '/', 'http://localhost');
@@ -1102,7 +1304,10 @@ export function createApiHandler({
       const input = validateMediaInput(
         parseMultipartBody(await readRawBody(request), boundary),
       );
-      let source;
+      if (typeof createResponsesStream !== 'function') {
+        throw new HttpError(503, 'not_configured', 'Live mode is not configured.');
+      }
+      let source: Response;
       try {
         source = await waitWithIdleLimit(
           () => createResponsesStream(input, upstream.signal),

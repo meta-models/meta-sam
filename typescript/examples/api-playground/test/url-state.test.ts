@@ -7,7 +7,11 @@ import { describe, expect, it } from 'vitest';
 import { findMediaExample } from '../src/examples';
 import { appReducer, createInitialState } from '../src/model';
 import { getReplayScenario } from '../src/scenarios';
-import { createSafeUrl, readSafeUrlState } from '../src/url-state';
+import {
+  createSafeUrl,
+  readSafeUrlState,
+  safeUrlSettingsFromState,
+} from '../src/url-state';
 
 const fixture = getReplayScenario('two-objects');
 const bedroom = findMediaExample('bedroom')!;
@@ -18,7 +22,7 @@ describe('safe URL state', () => {
     const current = new URL(
       'https://playground.test/?apiKey=secret&file=blob%3Aunsafe&results=private#evidence',
     );
-    const next = createSafeUrl(state, current);
+    const next = createSafeUrl(safeUrlSettingsFromState(state), current);
     expect([...next.searchParams.keys()].sort()).toEqual(['fixture', 'prompt']);
     expect(next.searchParams.get('fixture')).toBe('two-objects');
     expect(next.searchParams.get('prompt')).toBe('untrusted override');
@@ -38,7 +42,10 @@ describe('safe URL state', () => {
     });
     state = appReducer(state, { type: 'setView', key: 'showOverlay', value: false });
     state = appReducer(state, { type: 'setInspectorTab', tab: 'stream' });
-    const next = createSafeUrl(state, new URL('https://playground.test/'));
+    const next = createSafeUrl(
+      safeUrlSettingsFromState(state),
+      new URL('https://playground.test/'),
+    );
     expect(next.searchParams.get('example')).toBe('bedroom');
     expect(next.searchParams.get('prompt')).toBe('paddle');
     expect(next.searchParams.get('model')).toBe('example-video-model');
@@ -46,7 +53,7 @@ describe('safe URL state', () => {
     expect(next.searchParams.get('panel')).toBe('stream');
 
     const defaults = createSafeUrl(
-      createInitialState({ example: bedroom }),
+      safeUrlSettingsFromState(createInitialState({ example: bedroom })),
       new URL('https://playground.test/'),
     );
     expect([...defaults.searchParams.keys()].sort()).toEqual(['example', 'prompt']);
@@ -64,7 +71,7 @@ describe('safe URL state', () => {
       height: 0,
     });
     const next = createSafeUrl(
-      state,
+      safeUrlSettingsFromState(state),
       new URL('https://playground.test/?file=blob%3Aprivate'),
     );
     expect(next.searchParams.has('example')).toBe(false);

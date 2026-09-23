@@ -3,6 +3,13 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
+import type {
+  IncomingHttpHeaders,
+  IncomingMessage,
+  OutgoingHttpHeader,
+  OutgoingHttpHeaders,
+  ServerResponse,
+} from 'node:http';
 import { Readable } from 'node:stream';
 
 import {
@@ -18,7 +25,12 @@ import {
   relayResponsesEvents,
   validateMediaInput,
   validateUploadInput,
-} from '../server-core.mjs';
+} from '../server/server-core.ts';
+import type {
+  MultipartFields,
+  RelayInput,
+  ValidatedMedia,
+} from '../server/server-core.ts';
 
 const mediaBytes = {
   'image/png': Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -32,8 +44,34 @@ const mediaBytes = {
   ]),
 };
 
-function multipart(parts, boundary = 'boundary-test') {
-  const chunks = [];
+interface MultipartPart {
+  readonly name: string;
+  readonly filename?: string;
+  readonly contentType?: string;
+  readonly data: string | Buffer;
+}
+
+interface RequestOptions {
+  readonly method?: string;
+  readonly url?: string;
+  readonly host?: string;
+  readonly origin?: string;
+  readonly rawHeaders?: string[];
+}
+
+type RecordedResponse = ServerResponse & {
+  body: string;
+  destroyed: boolean;
+  headers: Record<string, OutgoingHttpHeader>;
+  status: number | null;
+  writableEnded: boolean;
+};
+
+function multipart(
+  parts: readonly MultipartPart[],
+  boundary = 'boundary-test',
+): Buffer {
+  const chunks: Buffer[] = [];
   for (const part of parts) {
     chunks.push(Buffer.from(`--${boundary}\r\n`));
     const disposition =
@@ -58,55 +96,67 @@ function request({
   host = '127.0.0.1:4173',
   origin,
   rawHeaders,
-} = {}) {
-  const headers = { host, ...(origin === undefined ? {} : { origin }) };
+}: RequestOptions = {}): IncomingMessage {
+  const headers: IncomingHttpHeaders = {
+    host,
+    ...(origin === undefined ? {} : { origin }),
+  };
   return {
     method,
     url,
     headers,
     rawHeaders:
-      rawHeaders ?? Object.entries(headers).flatMap(([name, value]) => [name, value]),
-  };
+      rawHeaders ??
+      Object.entries(headers).flatMap(([name, value]) => [name, String(value)]),
+  } as IncomingMessage;
 }
 
-function responseRecorder() {
-  return {
+function responseRecorder(): RecordedResponse {
+  const recorder = {
     body: '',
     destroyed: false,
-    headers: {},
-    status: null,
+    headers: {} as Record<string, OutgoingHttpHeader>,
+    status: null as number | null,
     writableEnded: false,
-    setHeader(name, value) {
-      this.headers[name.toLowerCase()] = value;
+    setHeader(name: string, value: OutgoingHttpHeader) {
+      recorder.headers[name.toLowerCase()] = value;
+      return recorder;
     },
-    writeHead(status, headers) {
-      this.status = status;
+    writeHead(status: number, headers: OutgoingHttpHeaders = {}) {
+      recorder.status = status;
       for (const [name, value] of Object.entries(headers)) {
-        this.headers[name.toLowerCase()] = value;
+        if (value !== undefined) recorder.headers[name.toLowerCase()] = value;
       }
+      return recorder;
     },
-    write(chunk) {
-      this.body += chunk;
+    write(chunk: string | Uint8Array) {
+      recorder.body += String(chunk);
       return true;
     },
-    end(body = '') {
-      this.body += body;
-      this.writableEnded = true;
+    end(body: string | Uint8Array = '') {
+      recorder.body += String(body);
+      recorder.writableEnded = true;
+      return recorder;
     },
     on() {
-      return this;
+      return recorder;
     },
     once() {
-      return this;
+      return recorder;
     },
     off() {
-      return this;
+      return recorder;
     },
   };
+  return recorder as unknown as RecordedResponse;
 }
 
-function postRequest(url, body, boundary = 'boundary-test') {
-  const stream = Readable.from([body]);
+function postRequest(
+  url: string,
+  body: Buffer,
+  boundary = 'boundary-test',
+): IncomingMessage {
+  const stream = Readable.from([body]) as unknown as IncomingMessage;
   stream.method = 'POST';
   stream.url = url;
   stream.headers = {
@@ -115,8 +165,21 @@ function postRequest(url, body, boundary = 'boundary-test') {
     'content-type': `multipart/form-data; boundary=${boundary}`,
     'content-length': String(body.length),
   };
-  stream.rawHeaders = Object.entries(stream.headers).flat();
+  stream.rawHeaders = Object.entries(stream.headers).flatMap(([name, value]) => [
+    name,
+    String(value),
+  ]);
   return stream;
+}
+
+function writeOnlyResponse(
+  write: (chunk: string | Uint8Array) => boolean,
+): ServerResponse {
+  return {
+    destroyed: false,
+    writableEnded: false,
+    write,
+  } as unknown as ServerResponse;
 }
 
 function liveConfig() {
@@ -127,25 +190,20 @@ function liveConfig() {
 }
 
 describe('live server boundary', () => {
-  it('allows Vite websocket connections only in development CSP', () => {
-    const production = responseRecorder();
-    applySecurityHeaders(production, false);
-    expect(production.headers['content-security-policy']).toContain(
+  it('uses a strict production CSP with only the required Astryx style hash', () => {
+    const response = responseRecorder();
+    applySecurityHeaders(response);
+    expect(response.headers['content-security-policy']).toContain(
       "connect-src 'self';",
     );
-    expect(production.headers['content-security-policy']).not.toMatch(/\bws:/);
-    expect(production.headers['content-security-policy']).not.toMatch(/\bwss:/);
-    expect(production.headers['content-security-policy']).not.toContain(
+    expect(response.headers['content-security-policy']).not.toMatch(/\bws:/);
+    expect(response.headers['content-security-policy']).not.toMatch(/\bwss:/);
+    expect(response.headers['content-security-policy']).not.toContain(
       "'unsafe-inline'",
     );
-
-    const development = responseRecorder();
-    applySecurityHeaders(development, true);
-    expect(development.headers['content-security-policy']).toContain(
-      "connect-src 'self' ws: wss:;",
-    );
-    expect(development.headers['content-security-policy']).toContain(
-      "style-src 'self' 'unsafe-inline'",
+    expect(response.headers['content-security-policy']).toContain("script-src 'self';");
+    expect(response.headers['content-security-policy']).toContain(
+      "style-src 'self' 'sha256-W8DZlwvt7jPAC5BancWmJ6mGbNdefbHBPaUSM8MxNfQ='",
     );
   });
 
@@ -471,9 +529,12 @@ describe('live server boundary', () => {
     const fields = parseMultipartBody(body, boundary);
     expect(fields.prompt).toBe('apple');
     expect(fields.model).toBe('sam-3.1');
-    expect(fields.media.filename).toBe('clip.mp4');
-    expect(fields.media.contentType).toBe('video/mp4');
-    expect(Buffer.compare(fields.media.bytes, mediaBytes['video/mp4'])).toBe(0);
+    const media = fields.media;
+    expect(media).toBeDefined();
+    if (media === undefined) throw new TypeError('Expected a media field.');
+    expect(media.filename).toBe('clip.mp4');
+    expect(media.contentType).toBe('video/mp4');
+    expect(Buffer.compare(media.bytes, mediaBytes['video/mp4'])).toBe(0);
 
     const upload = validateUploadInput(fields);
     expect(upload).toMatchObject({
@@ -520,8 +581,8 @@ describe('live server boundary', () => {
       ),
     ).toThrow(/unsupported fields/i);
 
-    const expectCode = (fields, code) => {
-      let caught;
+    const expectCode = (fields: MultipartFields, code: string): void => {
+      let caught: unknown;
       try {
         validateUploadInput(fields);
       } catch (error) {
@@ -554,8 +615,8 @@ describe('live server boundary', () => {
       fileId: 'file-abc123',
     });
 
-    const expectCode = (fields, code) => {
-      let caught;
+    const expectCode = (fields: MultipartFields, code: string): void => {
+      let caught: unknown;
       try {
         validateMediaInput(fields);
       } catch (error) {
@@ -606,18 +667,20 @@ describe('live server boundary', () => {
       prompt: 'rectangular panel',
       media: { kind: 'image', mimeType: 'image/jpeg', filename: 'p.jpg' },
     });
-    expect(
-      validateMediaInput({
-        prompt: 'panel',
-        media: { bytes: mediaBytes['image/png'], filename: '../"evil"/x.png' },
-      }).media.filename,
-    ).toBe('..evilx.png');
+    const sanitizedImage = validateMediaInput({
+      prompt: 'panel',
+      media: { bytes: mediaBytes['image/png'], filename: '../"evil"/x.png' },
+    });
+    if (sanitizedImage.kind !== 'image') {
+      throw new TypeError('Expected validated image media.');
+    }
+    expect(sanitizedImage.media.filename).toBe('..evilx.png');
     expect(
       validateUploadInput({ media: { bytes: mediaBytes['video/mp4'] } }).media.filename,
     ).toBe('video.mp4');
 
-    const expectCode = (fields, code) => {
-      let caught;
+    const expectCode = (fields: MultipartFields, code: string): void => {
+      let caught: unknown;
       try {
         validateMediaInput(fields);
       } catch (error) {
@@ -732,14 +795,10 @@ describe('live server boundary', () => {
       { headers: { 'Content-Type': 'text/event-stream' } },
     );
     let written = '';
-    const downstream = {
-      destroyed: false,
-      writableEnded: false,
-      write(chunk) {
-        written += chunk;
-        return true;
-      },
-    };
+    const downstream = writeOnlyResponse((chunk) => {
+      written += String(chunk);
+      return true;
+    });
     await relayResponsesEvents(upstream, downstream, new AbortController().signal);
     const types = written
       .trim()
@@ -760,13 +819,7 @@ describe('live server boundary', () => {
     const upstream = new Response(payload, {
       headers: { 'Content-Type': 'application/x-ndjson' },
     });
-    const downstream = {
-      destroyed: false,
-      writableEnded: false,
-      write() {
-        return true;
-      },
-    };
+    const downstream = writeOnlyResponse(() => true);
     await expect(
       relayResponsesEvents(upstream, downstream, new AbortController().signal, {
         eventLimit: 1024 * 1024,
@@ -798,14 +851,10 @@ describe('live server boundary', () => {
       { headers: { 'Content-Type': 'text/event-stream' } },
     );
     let written = '';
-    const downstream = {
-      destroyed: false,
-      writableEnded: false,
-      write(chunk) {
-        written += chunk;
-        return true;
-      },
-    };
+    const downstream = writeOnlyResponse((chunk) => {
+      written += String(chunk);
+      return true;
+    });
     await relayResponsesEvents(upstream, downstream, new AbortController().signal);
     const events = written
       .trim()
@@ -832,7 +881,7 @@ describe('live server boundary', () => {
   });
 
   it('returns only an opaque handle and byte count from POST /api/files', async () => {
-    const uploads = [];
+    const uploads: ValidatedMedia[] = [];
     const handler = createApiHandler({
       config: liveConfig(),
       createResponsesStream() {
@@ -928,7 +977,7 @@ describe('live server boundary', () => {
   });
 
   it('reports an upstream rejection of a video handle as recoverable', async () => {
-    const handlerFor = (status) =>
+    const handlerFor = (status: number) =>
       createApiHandler({
         config: liveConfig(),
         createResponsesStream() {
@@ -974,7 +1023,7 @@ describe('live server boundary', () => {
   });
 
   it('passes a selected model through the responses route', async () => {
-    const inputs = [];
+    const inputs: RelayInput[] = [];
     const handler = createApiHandler({
       config: liveConfig(),
       createResponsesStream(input) {

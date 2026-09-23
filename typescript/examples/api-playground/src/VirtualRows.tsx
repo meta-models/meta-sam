@@ -60,11 +60,11 @@ export function VirtualRows({
   const [viewport, setViewport] = useState<Viewport>(INITIAL_VIEWPORT);
   // Held in a ref so a caller's inline callback cannot re-arm the observer.
   const report = useRef(onScrollMetrics);
-  report.current = onScrollMetrics;
+  useEffect(() => {
+    report.current = onScrollMetrics;
+  }, [onScrollMetrics]);
 
-  const measure = useCallback(() => {
-    const element = scrollRef.current;
-    if (element === null) return;
+  const measure = useCallback((element: HTMLDivElement) => {
     const scrollTop = element.scrollTop;
     const height = element.clientHeight;
     setViewport((previous) =>
@@ -77,13 +77,13 @@ export function VirtualRows({
       viewportHeight: height,
       contentHeight: element.scrollHeight,
     });
-  }, [scrollRef]);
+  }, []);
 
   useEffect(() => {
     const element = scrollRef.current;
     if (element === null) return;
-    measure();
-    const observer = new ResizeObserver(() => measure());
+    measure(element);
+    const observer = new ResizeObserver(() => measure(element));
     observer.observe(element);
     return () => observer.disconnect();
   }, [measure, scrollRef]);
@@ -115,7 +115,7 @@ export function VirtualRows({
     <div
       className={className === undefined ? 'virtual-rows' : `virtual-rows ${className}`}
       ref={scrollRef}
-      onScroll={measure}
+      onScroll={(event) => measure(event.currentTarget)}
       {...(testId === undefined ? {} : { 'data-testid': testId })}
     >
       <ul
