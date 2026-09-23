@@ -4,26 +4,39 @@ An interactive playground for the SAM 3 Responses API built on `@meta-sam/parser
 
 Examples are real media under `public/media` (one MP4 clip and two photos, copied from the public [`facebookresearch/sam3`](https://github.com/facebookresearch/sam3/tree/main/assets) assets under the same SAM License) and run against the live API, so a configured key is required to segment. Each example row shows a thumbnail: the photo itself, or a poster frame extracted from the clip in the browser, one clip at a time and cached for the session. Hovering or focusing a video row plays a muted, looped preview inside that thumbnail — one at a time, and never when the browser reports `prefers-reduced-motion: reduce`. Image requests are unary; a video is uploaded to the Model API Files endpoint once when it is selected, and each run streams against that handle, mapping each `<Nf>` frame onto the source packet timeline. The request rail loads the unfiltered Model API catalog from `GET /api/models`, defaults to `SAM_MODEL`, and keeps the selected model in the URL. The Code action renders copyable curl and TypeScript for the current model, noun phrase, media kind, and safe uploaded-file handle when one exists. The checked-in replay fixtures remain available for tests through `?fixture=<id>` and never appear in the UI.
 
-## Setup
+## Quick start
 
-From `typescript/`:
+Run these commands from the repository root:
 
 ```sh
-npm run playground:install
-npm run playground:dev
+npm --prefix typescript run playground:setup
+cp typescript/examples/api-playground/.env.example \
+  typescript/examples/api-playground/.env.local
 ```
 
-The playground defaults to `127.0.0.1:4173`. Pass `--port 5173` to choose another port.
+Edit `.env.local` and add your Model API key after `SAM_API_KEY=`. Then start the playground:
 
-Without configuration the playground still plays media locally, but the live API is unavailable and the Segment button stays disabled. Binding to a non-loopback host (`--host 0.0.0.0`) is refused whenever a key is configured.
+```sh
+npm --prefix typescript run playground:dev
+```
+
+Open <http://127.0.0.1:4173>. The setup command installs both the TypeScript workspace and playground dependencies. Run it again after either lockfile changes. Vite serves the frontend and mounts the TypeScript API relay through its development and preview plugin hooks.
+
+The playground defaults to `127.0.0.1:4173`. Pass `-- --port 5173` to choose another port:
+
+```sh
+npm --prefix typescript run playground:dev -- --port 5173
+```
+
+Without configuration, the playground still plays media locally. The live API is unavailable, and the Segment button stays disabled. Binding to a non-loopback host (`--host 0.0.0.0`) is refused whenever a key is configured.
 
 ## Live API on a local Mac
 
-Create `typescript/examples/api-playground/.env.local` (from the repository root) on the Mac that runs the playground:
+The quick start copies `typescript/examples/api-playground/.env.example` to `.env.local`. Its live configuration is:
 
 ```dotenv
-SAM_MODEL=your-model
-SAM_API_KEY=your-key
+SAM_MODEL=sam-3.1
+SAM_API_KEY=
 # Optional; defaults to the authoritative Meta Model API base:
 # SAM_API_BASE_URL=https://api.meta.ai/v1
 ```
@@ -47,11 +60,11 @@ The production stream closes each text lane with `response.content_part.done`; t
 ## Commands
 
 ```sh
-npm run playground:build
-npm run playground:test
-npm run playground:test:browser
-npm run playground:test:packed
-npm run playground:preview
+npm --prefix typescript run playground:build
+npm --prefix typescript run playground:test
+npm --prefix typescript run playground:test:browser
+npm --prefix typescript run playground:test:packed
+npm --prefix typescript run playground:preview
 ```
 
 `playground:test:packed` is the release-shaped consumer gate. It builds the workspace packages, creates audited canonical npm tarballs, copies the playground into a disposable directory without local environment files or build output, regenerates only that copy’s lockfile with the repository-pinned npm version, and installs with lifecycle scripts disabled. It then verifies package identities, SAM License declarations and exact license bytes, tarball integrities, root exports, declarations, non-linked dependency resolution, a production Vite build, and focused image and video Playwright flows against the isolated production server. The disposable directory is removed on success or failure; the committed playground lockfile is never changed.

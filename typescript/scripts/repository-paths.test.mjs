@@ -53,14 +53,24 @@ test('Prettier ignores validation and browser output trees', async () => {
   }
 });
 
-test('playground instructions and banner identify the relocated environment file', async () => {
-  const [readme, app] = await Promise.all([
+test('playground instructions use root-level commands and the relocated environment file', async () => {
+  const [readme, app, environmentTemplate] = await Promise.all([
     readRepositoryFile('typescript/examples/api-playground/README.md'),
     readRepositoryFile('typescript/examples/api-playground/src/App.tsx'),
+    readRepositoryFile('typescript/examples/api-playground/.env.example'),
   ]);
-  expect(readme).toContain('From `typescript/`:');
-  expect(readme).toContain('`typescript/examples/api-playground/.env.local`');
-  expect(readme).not.toContain('From the repository root:');
+  expect(readme).toContain('Run these commands from the repository root:');
+  expect(readme).toContain('npm --prefix typescript run playground:setup');
+  expect(readme).toContain('`typescript/examples/api-playground/.env.example`');
+  expect(readme).toContain(
+    'TypeScript API relay through its development and preview plugin hooks',
+  );
   expect(app).toContain('typescript/examples/api-playground/.env.local');
   expect(app).not.toContain('in examples/api-playground/.env.local and restart');
+  expect(environmentTemplate).toContain('SAM_MODEL=sam-3.1');
+  expect(environmentTemplate).toMatch(/^SAM_API_KEY=$/m);
+  expect(environmentTemplate).not.toContain('SAM_API_KEY=your-key');
+  for (const command of ['build', 'test', 'test:browser', 'test:packed', 'preview']) {
+    expect(readme).toContain(`npm --prefix typescript run playground:${command}`);
+  }
 });

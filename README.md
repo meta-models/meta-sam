@@ -12,6 +12,29 @@ Language-neutral protocol documentation, shared conformance cases, and native-la
 
 Package details and release instructions live in each implementation's README: [TypeScript](typescript/README.md) and [Python](python/README.md).
 
+## Try the API playground
+
+From the repository root, install both TypeScript dependency trees with one command:
+
+```sh
+npm --prefix typescript run playground:setup
+```
+
+For live segmentation, copy the environment template and add your Model API key:
+
+```sh
+cp typescript/examples/api-playground/.env.example \
+  typescript/examples/api-playground/.env.local
+```
+
+Then start the playground:
+
+```sh
+npm --prefix typescript run playground:dev
+```
+
+Open <http://127.0.0.1:4173>. See the [playground README](typescript/examples/api-playground/README.md) for configuration and test commands.
+
 ## Validation
 
 From the repository root:
