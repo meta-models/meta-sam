@@ -75,6 +75,11 @@ export interface RequestState {
    * it.
    */
   readonly scoreThreshold: number | null;
+  /**
+   * Whether live runs ask for the optional `c` confidence by sending
+   * `metadata.include_confidence`. Replays never send it.
+   */
+  readonly includeConfidence: boolean;
 }
 
 export interface RunState {
@@ -146,6 +151,7 @@ export interface InitialSettings {
   readonly prompt?: string;
   readonly model?: string;
   readonly scoreThreshold?: number;
+  readonly includeConfidence?: boolean;
   readonly showOverlay?: boolean;
   readonly inspectorTab?: InspectorTab;
 }
@@ -260,6 +266,7 @@ export function createInitialState(settings: InitialSettings = {}): AppState {
       scoreThreshold: isScoreThreshold(settings.scoreThreshold)
         ? settings.scoreThreshold
         : null,
+      includeConfidence: settings.includeConfidence ?? true,
     },
     run: {
       runId: 0,
@@ -304,6 +311,7 @@ export type AppAction =
   | { readonly type: 'initializeModel'; readonly model: string }
   | { readonly type: 'setModel'; readonly runId: number; readonly model: string }
   | { readonly type: 'setScoreThreshold'; readonly value: number | null }
+  | { readonly type: 'setIncludeConfidence'; readonly value: boolean }
   | { readonly type: 'setTheme'; readonly theme: ThemeMode }
   | { readonly type: 'mediaUploadStart'; readonly generation: number }
   | {
@@ -495,6 +503,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         return state;
       }
       return { ...state, request: { ...state.request, scoreThreshold: action.value } };
+    case 'setIncludeConfidence':
+      if (
+        state.run.status === 'streaming' ||
+        typeof action.value !== 'boolean' ||
+        action.value === state.request.includeConfidence
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        request: { ...state.request, includeConfidence: action.value },
+      };
     case 'setTheme':
       return { ...state, view: { ...state.view, theme: action.theme } };
     case 'mediaUploadStart':

@@ -173,6 +173,7 @@ function initialState() {
     ...(settings.scoreThreshold === null
       ? {}
       : { scoreThreshold: settings.scoreThreshold }),
+    includeConfidence: settings.includeConfidence,
     showOverlay: settings.showOverlay,
     ...(settings.inspectorTab === null ? {} : { inspectorTab: settings.inspectorTab }),
   });
@@ -404,6 +405,9 @@ async function executeRun({
         state.run.transport === 'live' &&
         state.request.scoreThreshold !== null
           ? { scoreThreshold: state.request.scoreThreshold }
+          : {}),
+        ...(state.run.transport === 'live' && state.request.includeConfidence
+          ? { includeConfidence: true }
           : {}),
       };
       const events = tap(transport.stream(request, controller.signal));
@@ -645,6 +649,8 @@ export function App(): React.JSX.Element {
     state.run.transport === 'live' &&
     media.kind === 'image' &&
     media.sourceUrl !== null;
+  // Confidence is a live request option for images and video alike.
+  const isLiveMedia = isLiveImage || isLiveVideo;
 
   useEffect(() => {
     if (!live.configured || !isLiveVideo) return;
@@ -788,14 +794,17 @@ export function App(): React.JSX.Element {
         state.media.file?.type || inferMediaMimeType(filename, state.media.kind),
       fileId: state.media.upload.fileId,
       scoreThreshold: isLiveImage ? state.request.scoreThreshold : null,
+      includeConfidence: isLiveMedia ? state.request.includeConfidence : null,
     });
   }, [
     currentModel,
     isCodeOpen,
     isLiveImage,
+    isLiveMedia,
     live.endpointOrigin,
     state.media,
     state.prompt.text,
+    state.request.includeConfidence,
     state.request.scoreThreshold,
   ]);
 
@@ -982,6 +991,19 @@ export function App(): React.JSX.Element {
             if (event.key === 'Enter' && canRun) void run();
           }}
         />
+        {isLiveMedia ? (
+          <Switch
+            label="Include confidence"
+            description="Asks the model for each object's confidence."
+            size="sm"
+            value={state.request.includeConfidence}
+            isDisabled={isRunning || !live.configured}
+            onChange={(checked) =>
+              dispatch({ type: 'setIncludeConfidence', value: checked })
+            }
+            data-testid="include-confidence"
+          />
+        ) : null}
         {isLiveImage ? (
           <VStack gap={2} data-testid="score-threshold">
             <Switch

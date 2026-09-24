@@ -18,6 +18,8 @@ export const MAX_FILENAME_LENGTH = 200;
 export const MAX_FILE_ID_LENGTH = 126;
 export const MAX_MODEL_ID_LENGTH = 120;
 export const MAX_SCORE_THRESHOLD_LENGTH = 32;
+/** `include_confidence` is exactly `true` or `false`. */
+const MAX_INCLUDE_CONFIDENCE_LENGTH = 5;
 /** A plain decimal: digits with an optional fraction, or a fraction alone. */
 const SCORE_THRESHOLD_PATTERN = /^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)$/;
 /** The opaque Files API handle the browser is allowed to hold and send back. */
@@ -30,6 +32,7 @@ const responsesFields = new Set([
   'media',
   'file_id',
   'score_threshold',
+  'include_confidence',
 ]);
 const MODEL_CACHE_TTL = 5 * 60 * 1_000;
 const MAX_STREAM_SIZE = 64 * 1024 * 1024;
@@ -62,10 +65,12 @@ export type MultipartFields = {
   model?: string;
   file_id?: string;
   score_threshold?: string;
+  include_confidence?: string;
   media?: MultipartMedia;
 };
 
-type MultipartTextField = 'prompt' | 'model' | 'file_id' | 'score_threshold';
+type MultipartTextField =
+  'prompt' | 'model' | 'file_id' | 'score_threshold' | 'include_confidence';
 
 export type ValidatedMedia = Readonly<
   | {
@@ -89,6 +94,8 @@ export type ImageRelayInput = Readonly<{
   media: ValidatedMedia & { kind: 'image' };
   /** Minimum detection score from 0 through 1; absent means no filtering. */
   scoreThreshold?: number;
+  /** Whether to ask for the optional `c` confidence; absent sends nothing. */
+  includeConfidence?: boolean;
 }>;
 
 export type VideoRelayInput = Readonly<{
@@ -96,6 +103,8 @@ export type VideoRelayInput = Readonly<{
   model?: string;
   kind: 'video';
   fileId: string;
+  /** Whether to ask for the optional `c` confidence; absent sends nothing. */
+  includeConfidence?: boolean;
 }>;
 
 export type RelayInput = ImageRelayInput | VideoRelayInput;
@@ -408,6 +417,18 @@ function validateOptionalScoreThreshold(value: unknown): number | undefined {
   return threshold;
 }
 
+function validateOptionalIncludeConfidence(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (value !== 'true' && value !== 'false') {
+    throw new HttpError(
+      400,
+      'invalid_include_confidence',
+      'include_confidence must be "true" or "false".',
+    );
+  }
+  return value === 'true';
+}
+
 /**
  * Validates the decoded multipart fields of an upload request. Only MP4 video
  * is accepted: the Files API handle exists for the streaming video path, and an
@@ -432,6 +453,10 @@ export function validateMediaInput(fields: MultipartFields): RelayInput {
   const prompt = validatePrompt(fields.prompt);
   const model = validateOptionalModel(fields.model);
   const scoreThreshold = validateOptionalScoreThreshold(fields.score_threshold);
+  const includeConfidence = validateOptionalIncludeConfidence(
+    fields.include_confidence,
+  );
+  const confidence = includeConfidence === undefined ? {} : { includeConfidence };
   const hasFileId = fields.file_id !== undefined;
   const hasMedia = fields.media !== undefined;
   if (hasFileId && hasMedia) {
@@ -457,6 +482,7 @@ export function validateMediaInput(fields: MultipartFields): RelayInput {
       ...(model === undefined ? {} : { model }),
       kind: 'video',
       fileId: fields.file_id,
+      ...confidence,
     });
   }
   const media = validateMediaPart(fields.media);
@@ -473,6 +499,7 @@ export function validateMediaInput(fields: MultipartFields): RelayInput {
     kind: 'image',
     media,
     ...(scoreThreshold === undefined ? {} : { scoreThreshold }),
+    ...confidence,
   });
 }
 
@@ -639,12 +666,14 @@ export function parseMultipartBody(
         model: 'invalid_model',
         file_id: 'invalid_file_id',
         score_threshold: 'invalid_score_threshold',
+        include_confidence: 'invalid_include_confidence',
       }[name];
       const limit = {
         prompt: 4 * MAX_PROMPT_LENGTH,
         model: 4 * MAX_MODEL_ID_LENGTH,
         file_id: MAX_FILE_ID_LENGTH,
         score_threshold: MAX_SCORE_THRESHOLD_LENGTH,
+        include_confidence: MAX_INCLUDE_CONFIDENCE_LENGTH,
       }[name];
       if (part.filename !== undefined || data.length > limit) {
         throw new HttpError(400, code, `The ${part.name} field is invalid.`);

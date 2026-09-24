@@ -14,6 +14,7 @@ const MODEL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,120}$/;
 type ModelRequestInput = {
   model?: unknown;
   prompt: string;
+  includeConfidence?: boolean;
 };
 
 type ImageRequestInput = ModelRequestInput & {
@@ -61,6 +62,25 @@ function requestModel(config: ServerConfig, input: ModelRequestInput): string {
   return model;
 }
 
+/**
+ * Responses metadata is a string-to-string map, so request options travel as
+ * strings. `include_confidence` asks the model for the optional `c` field on
+ * each box and mask. The object is omitted when no option is set.
+ */
+function requestMetadata(input: ModelRequestInput & { scoreThreshold?: number }): {
+  metadata?: Record<string, string>;
+} {
+  const metadata: Record<string, string> = {
+    ...(input.scoreThreshold === undefined
+      ? {}
+      : { score_threshold: String(input.scoreThreshold) }),
+    ...(input.includeConfidence === undefined
+      ? {}
+      : { include_confidence: String(input.includeConfidence) }),
+  };
+  return Object.keys(metadata).length === 0 ? {} : { metadata };
+}
+
 function userMessage(prompt: string, mediaPart: JsonRecord): readonly JsonRecord[] {
   return [
     {
@@ -75,8 +95,8 @@ function userMessage(prompt: string, mediaPart: JsonRecord): readonly JsonRecord
  * Image requests are unary. The SAM video Responses API answers a
  * streaming image request with `response.failed`, so the image path asks for a
  * single JSON body and adapts it into the same event stream the video path
- * produces natively. A score threshold travels as the string metadata value
- * `score_threshold`, because Responses metadata is a string-to-string map.
+ * produces natively. Request options travel in `metadata`; see
+ * `requestMetadata`.
  */
 export function buildImageResponsesRequest(
   config: ServerConfig,
@@ -98,9 +118,7 @@ export function buildImageResponsesRequest(
           type: 'input_image',
           image_url: `data:${input.media.mimeType};base64,${input.media.bytes.toString('base64')}`,
         }),
-        ...(input.scoreThreshold === undefined
-          ? {}
-          : { metadata: { score_threshold: String(input.scoreThreshold) } }),
+        ...requestMetadata(input),
       }),
     },
   };
@@ -149,6 +167,7 @@ export function buildVideoResponsesRequest(
         model: requestModel(config, input),
         stream: true,
         input: userMessage(input.prompt, { type: 'input_video', file_id: fileId }),
+        ...requestMetadata(input),
       }),
     },
   };

@@ -654,6 +654,61 @@ describe('live server boundary', () => {
     ).toMatchObject({ kind: 'image', media: { mimeType: 'image/png' } });
   });
 
+  it('accepts include_confidence as exactly true or false for image and video', () => {
+    const boundary = 'boundary-test';
+    const image = parseMultipartBody(
+      multipart([
+        { name: 'prompt', data: 'apple' },
+        { name: 'include_confidence', data: 'true' },
+        { name: 'media', filename: 'a.png', data: mediaBytes['image/png'] },
+      ]),
+      boundary,
+    );
+    expect(image.include_confidence).toBe('true');
+    expect(validateMediaInput(image)).toMatchObject({
+      kind: 'image',
+      includeConfidence: true,
+    });
+    expect(
+      validateMediaInput({
+        prompt: 'apple',
+        include_confidence: 'false',
+        file_id: 'file-abc123',
+      }),
+    ).toEqual({
+      prompt: 'apple',
+      kind: 'video',
+      fileId: 'file-abc123',
+      includeConfidence: false,
+    });
+    expect(
+      validateMediaInput({ prompt: 'apple', file_id: 'file-abc123' }),
+    ).not.toHaveProperty('includeConfidence');
+
+    for (const value of ['TRUE', 'yes', '1', '', ' true']) {
+      let caught: unknown;
+      try {
+        validateMediaInput({
+          prompt: 'apple',
+          include_confidence: value,
+          file_id: 'file-abc123',
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ code: 'invalid_include_confidence' });
+    }
+    expect(() =>
+      parseMultipartBody(
+        multipart([
+          { name: 'prompt', data: 'apple' },
+          { name: 'include_confidence', data: 'truest' },
+        ]),
+        boundary,
+      ),
+    ).toThrow(/include_confidence field is invalid/);
+  });
+
   it('accepts a score threshold from 0 through 1 for images only', () => {
     const boundary = 'boundary-test';
     const fields = parseMultipartBody(
