@@ -485,6 +485,7 @@ function normalizeRecord(
         top: record.top,
         right: record.right,
         bottom: record.bottom,
+        ...(record.confidence === undefined ? {} : { confidence: record.confidence }),
       };
     case 'mask':
       return {
@@ -514,6 +515,7 @@ function normalizeRecord(
           right: record.bounds.right,
           bottom: record.bounds.bottom,
         },
+        ...(record.confidence === undefined ? {} : { confidence: record.confidence }),
       };
     default:
       return assertNever(record);

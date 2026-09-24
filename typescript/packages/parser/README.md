@@ -154,9 +154,11 @@ and the owner of a stable `finalResult` promise.
   `revision`.
 - **`rawOutput` is the exact accumulated output text.** Use structured records for
   application behavior and retain `rawOutput` for inspection or logging.
-- **`diagnostics` are recoverable format problems.** A malformed structured line is
-  omitted from `records` and reported with `severity`, `code`, `message`, `line`,
-  and `raw`; parsing continues with later lines.
+- **`diagnostics` are recoverable format problems.** Each has `severity`, `code`,
+  `message`, `line`, and `raw`, and parsing continues with later lines. An `error`
+  means data was dropped: a malformed structured line is omitted from `records`. A
+  `warning` means the record was kept and part of the input was ignored, such as a
+  field or token a newer API sends; each warning is reported once per stream.
 
 After normal iteration completes, await `finalResult` for the final cumulative view
 and its `outcome`:
@@ -209,7 +211,7 @@ SAM 3.1 returns segmentation as special-token text in one `output_text` lane: on
 line per frame, with boxes and masks inline.
 
 ```text
-<Nf>id<|box;x1=..;y1=..;x2=..;y2=..;w=<frameW>;h=<frameH>|><|mask;x=0;y=0;data=<H>,<W>,<enc>payload|>,id<|box;...|><|mask;...|>
+<Nf>id<|box;x1=..;y1=..;x2=..;y2=..;w=<frameW>;h=<frameH>[;c=<confidence>]|><|mask;x=0;y=0;[c=<confidence>;]data=<H>,<W>,<enc>payload|>,id<|box;...|><|mask;...|>
 ```
 
 - `<Nf>` is the zero-based frame index. Frames with no visible object emit no line,
@@ -219,9 +221,22 @@ line per frame, with boxes and masks inline.
   one mask. The id is stable for an object across the frames of one response and is
   not a dense `0`-based sequence: a line may carry `0` and `2`. The parser retains
   it as a string in `objectId` and never derives it from position.
+- Box and mask fields are `;`-separated `key=value` pairs. The parser reads them by
+  name, so their order does not matter. It trims whitespace around keys and values
+  and skips empty fields. It keeps the record when it meets a key or a token it
+  does not know, or fields in the frame header, and reports an `ignored_field` or
+  `ignored_token` warning instead. A repeated field other than `c`, a missing
+  required field, or a record without exactly one box and one mask token makes the
+  record malformed.
 - The box corners `x1`, `y1`, `x2`, `y2` and the frame size `w`, `h` are source
   pixels; `x2` and `y2` are inclusive on the wire. The parser normalizes every box to
   half-open `left`, `top`, `right = x2 + 1`, `bottom = y2 + 1`.
+- `c` is the optional detection confidence, a number from 0 through 1. The parser
+  exposes each token's value as `confidence` on its `SegmentationBoxRecord` and
+  `SegmentationMaskRecord`. When a token has no `c`, its record has no
+  `confidence`; that does not mean zero. A `c` value that is not a number from 0
+  through 1 is ignored with an `ignored_confidence` warning; the box and mask are
+  kept.
 - The mask is `data=H,W,<enc>payload`: the raster's **height then width**, then one
   encoding character — `~` for `lossless` (the API default) or `!` for `one_bit` —
   followed by the complete payload. The parser stores it as

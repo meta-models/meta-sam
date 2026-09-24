@@ -49,54 +49,68 @@ def _decoded_mask(value: bytes) -> dict[str, Any]:
     return {"length": len(value), "runs": runs}
 
 
+def _with_confidence(
+    normalized: dict[str, Any], confidence: float | None
+) -> dict[str, Any]:
+    if confidence is not None:
+        normalized["confidence"] = confidence
+    return normalized
+
+
 def _normalize_record(record: SegmentationRecord) -> dict[str, Any]:
     if isinstance(record, SegmentationTextRecord):
         return {"kind": record.kind, "order": record.order, "text": record.text}
     frame_index = None if record.frame is None else record.frame.frame_index
     if isinstance(record, SegmentationBoxRecord):
-        return {
-            "kind": record.kind,
-            "order": record.order,
-            "object_id": record.object_id,
-            "frame_index": frame_index,
-            "left": record.left,
-            "top": record.top,
-            "right": record.right,
-            "bottom": record.bottom,
-        }
+        return _with_confidence(
+            {
+                "kind": record.kind,
+                "order": record.order,
+                "object_id": record.object_id,
+                "frame_index": frame_index,
+                "left": record.left,
+                "top": record.top,
+                "right": record.right,
+                "bottom": record.bottom,
+            },
+            record.confidence,
+        )
     if isinstance(record, SegmentationMaskRecord):
         bounds = record.bounds
-        return {
-            "kind": record.kind,
-            "order": record.order,
-            "object_id": record.object_id,
-            "frame_index": frame_index,
-            "identity": {
-                "media": record.identity.media,
-                "frame_index": record.identity.frame_index,
-                "object_id": record.identity.object_id,
-            },
-            "revision": record.revision,
-            "mask": {
-                "encoding": record.mask.encoding,
-                "payload": record.mask.payload,
-                "width": record.mask.width,
-                "height": record.mask.height,
-                "decoded": _decoded_mask(decode_mask_to_raster(record.mask)),
-                "raster": list(decode_mask_to_raster(record.mask)),
-                "coco_rle": {
-                    "size": list(decode_mask_to_rle(record.mask).size),
-                    "counts": decode_mask_to_rle(record.mask).counts,
+        return _with_confidence(
+            {
+                "kind": record.kind,
+                "order": record.order,
+                "object_id": record.object_id,
+                "frame_index": frame_index,
+                "identity": {
+                    "media": record.identity.media,
+                    "frame_index": record.identity.frame_index,
+                    "object_id": record.identity.object_id,
                 },
-                "svg_path": decode_mask_to_svg_path(record.mask),
+                "revision": record.revision,
+                "mask": {
+                    "encoding": record.mask.encoding,
+                    "payload": record.mask.payload,
+                    "width": record.mask.width,
+                    "height": record.mask.height,
+                    "decoded": _decoded_mask(decode_mask_to_raster(record.mask)),
+                    "raster": list(decode_mask_to_raster(record.mask)),
+                    "coco_rle": {
+                        "size": list(decode_mask_to_rle(record.mask).size),
+                        "counts": decode_mask_to_rle(record.mask).counts,
+                    },
+                    "svg_path": decode_mask_to_svg_path(record.mask),
+                },
+                "bounds": {
+                    "left": bounds.left,
+                    "top": bounds.top,
+                    "right": bounds.right,
+                    "bottom": bounds.bottom,
+                },
             },
-            "bounds": {
-                "left": bounds.left,
-                "top": bounds.top,
-                "right": bounds.right,
-                "bottom": bounds.bottom,
-            },
-        }
+            record.confidence,
+        )
     raise AssertionError(f"Unsupported record type: {type(record).__name__}")
 
 
@@ -302,4 +316,4 @@ def test_python_loader_rejects_parser_options(tmp_path: Path) -> None:
 
 @pytest.mark.conformance
 def test_all_shared_cases_execute_through_the_stream_adapter() -> None:
-    assert len(_CASES) == 35
+    assert len(_CASES) == 40

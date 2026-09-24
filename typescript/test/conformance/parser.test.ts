@@ -72,7 +72,7 @@ afterEach(async () => {
 const conformanceCases = await loadConformanceCases();
 
 test('discovers the complete quota-free shared corpus', () => {
-  expect(conformanceCases).toHaveLength(35);
+  expect(conformanceCases).toHaveLength(40);
 });
 
 test.each(conformanceCases)('shared conformance: $name', async (fixture) => {

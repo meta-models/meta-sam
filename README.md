@@ -44,6 +44,6 @@ node scripts/validate-conformance
 node scripts/validate
 ```
 
-The first command verifies the checked-in compatibility identity and runs all 35 cases in both languages. The second command runs each implementation's complete validation suite. Python validation includes formatting, linting, strict type checking, tests with at least 95% coverage, reproducible wheel and sdist builds, exact artifact audits, isolated wheel and sdist consumers, installed-distribution typing, and the pinned official OpenAI SDK smoke.
+The first command verifies the checked-in compatibility identity and runs all 40 cases in both languages. The second command runs each implementation's complete validation suite. Python validation includes formatting, linting, strict type checking, tests with at least 95% coverage, reproducible wheel and sdist builds, exact artifact audits, isolated wheel and sdist consumers, installed-distribution typing, and the pinned official OpenAI SDK smoke.
 
 Licensed under the [SAM License](LICENSE). Contributions are welcome—see [`CONTRIBUTING.md`](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md).

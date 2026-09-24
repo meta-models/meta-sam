@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "meta-sam-parser"
-version = "0.0.5"
+version = "0.0.6"
 description = "Native Python parsing primitives for the SAM 3 segmentation protocol"
 readme = "README.md"
 requires-python = ">=3.10"

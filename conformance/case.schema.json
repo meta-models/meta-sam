@@ -562,6 +562,12 @@
             },
             "bottom": {
               "type": "number"
+            },
+            "confidence": {
+              "description": "Detection confidence from the token's optional `c` field. Omitted when the source record has no `c`.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
             }
           },
           "additionalProperties": false
@@ -608,6 +614,12 @@
             },
             "bounds": {
               "$ref": "#/$defs/bounds"
+            },
+            "confidence": {
+              "description": "Detection confidence from the token's optional `c` field. Omitted when the source record has no `c`.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
             }
           },
           "additionalProperties": false
