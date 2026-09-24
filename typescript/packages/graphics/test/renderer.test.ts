@@ -4,6 +4,8 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  formatBoxLabel,
+  formatConfidence,
   objectColor,
   SegmentationRenderer,
   type SegmentationRenderOptions,
@@ -114,6 +116,18 @@ function context() {
     arguments: [number, number, number, number];
     globalAlpha: number;
   }> = [];
+  const fillRects: Array<{
+    arguments: [number, number, number, number];
+    fillStyle: string;
+  }> = [];
+  const texts: Array<{
+    text: string;
+    x: number;
+    y: number;
+    fillStyle: string;
+    font: string;
+    textBaseline: string;
+  }> = [];
   const call =
     (name: string) =>
     (...args: unknown[]) => {
@@ -126,6 +140,9 @@ function context() {
     lineWidth: 1,
     lineJoin: 'miter',
     lineCap: 'butt',
+    font: '10px sans-serif',
+    textAlign: 'start',
+    textBaseline: 'alphabetic',
     save: call('save'),
     restore: call('restore'),
     setTransform: call('setTransform'),
@@ -137,6 +154,24 @@ function context() {
     transform: call('transform'),
     translate: call('translate'),
     scale: call('scale'),
+    /** Six CSS pixels per character, so label widths are exact in tests. */
+    measureText: (text: string) => ({ width: text.length * 6 }),
+    fillRect: (left: number, top: number, width: number, height: number) => {
+      const arguments_: [number, number, number, number] = [left, top, width, height];
+      calls.push({ name: 'fillRect', arguments: arguments_ });
+      fillRects.push({ arguments: arguments_, fillStyle: value.fillStyle });
+    },
+    fillText: (text: string, x: number, y: number) => {
+      calls.push({ name: 'fillText', arguments: [text, x, y] });
+      texts.push({
+        text,
+        x,
+        y,
+        fillStyle: value.fillStyle,
+        font: value.font,
+        textBaseline: value.textBaseline,
+      });
+    },
     fill: (path: MockPath2D, rule?: CanvasFillRule) => {
       calls.push({ name: 'fill', arguments: [path, rule] });
       fills.push({ path, globalAlpha: value.globalAlpha });
@@ -164,6 +199,8 @@ function context() {
     strokes,
     fills,
     strokeRects,
+    fillRects,
+    texts,
   };
 }
 
@@ -1335,5 +1372,168 @@ describe('SegmentationRenderer', () => {
         limit: 'maxPathComplexity',
       });
     });
+  });
+});
+
+describe('box labels', () => {
+  function box(
+    objectId: string,
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+    extra: { confidence?: number; frameIndex?: number } = {},
+  ) {
+    return Object.freeze({
+      kind: 'box' as const,
+      order: 0,
+      objectId,
+      left,
+      top,
+      right,
+      bottom,
+      ...(extra.confidence === undefined ? {} : { confidence: extra.confidence }),
+      ...(extra.frameIndex === undefined
+        ? {}
+        : { frame: Object.freeze({ frameIndex: extra.frameIndex }) }),
+    });
+  }
+
+  // Scale 2 from a 100×80 source into a target offset by (10, 20). The mock
+  // context measures six CSS pixels per character; labels add 4px padding.
+  const labelOptions: SegmentationRenderOptions = {
+    media: 'image',
+    source: { x: 0, y: 0, width: 100, height: 80 },
+    target: { x: 10, y: 20, width: 200, height: 160 },
+  };
+
+  it('draws "<label> <object id> (<confidence>)" above the box top-left', async () => {
+    const renderer = new SegmentationRenderer({ boxLabels: true });
+    await renderer.update(snapshot([box('a', 20, 30, 40, 50, { confidence: 0.912 })]));
+    const canvas = context();
+    renderer.render(canvas.value, { ...labelOptions, boxLabel: '  pillow ' });
+    // The inverse of the source-to-target transform follows the forward one.
+    expect(canvas.calls.filter((entry) => entry.name === 'transform')).toEqual([
+      { name: 'transform', arguments: [2, 0, 0, 2, 10, 20] },
+      { name: 'transform', arguments: [0.5, 0, 0, 0.5, -5, -10] },
+    ]);
+    // Box top-left is (10 + 20×2, 20 + 30×2) = (50, 80); 'pillow a (0.912)'
+    // is 16 characters, so 96 + 2×4 wide.
+    expect(canvas.fillRects).toEqual([
+      { arguments: [50, 64, 104, 16], fillStyle: objectColor('a') },
+    ]);
+    expect(canvas.texts).toEqual([
+      {
+        text: 'pillow a (0.912)',
+        x: 54,
+        y: 72,
+        fillStyle: '#ffffff',
+        font: expect.stringContaining('11px') as unknown as string,
+        textBaseline: 'middle',
+      },
+    ]);
+    expect(canvas.calls.findIndex((entry) => entry.name === 'strokeRect')).toBeLessThan(
+      canvas.calls.findIndex((entry) => entry.name === 'fillRect'),
+    );
+    expect(canvas.calls.filter((entry) => entry.name === 'save')).toHaveLength(
+      canvas.calls.filter((entry) => entry.name === 'restore').length,
+    );
+  });
+
+  it('moves the label inside the box at the top edge and left at the right edge', async () => {
+    const renderer = new SegmentationRenderer({ boxLabels: true });
+    await renderer.update(
+      snapshot([
+        box('top', 0, 2, 10, 10, { confidence: 0.5 }),
+        box('right', 95, 40, 100, 50, { confidence: 1 }),
+      ]),
+    );
+    const canvas = context();
+    renderer.render(canvas.value, labelOptions);
+    expect(canvas.texts.map((entry) => entry.text)).toEqual([
+      'top (0.500)',
+      'right (1.000)',
+    ]);
+    expect(canvas.fillRects.map((entry) => entry.arguments)).toEqual([
+      // Top 20 + 2×2 = 24 leaves no room above the target's top at 20.
+      [10, 24, 74, 16],
+      // Left 10 + 95×2 = 200 would overflow the target's right edge at 210.
+      [124, 84, 86, 16],
+    ]);
+  });
+
+  it('always shows the object id and skips hidden and off-frame boxes', async () => {
+    const records = snapshot(
+      [
+        box('plain', 10, 20, 20, 30, { frameIndex: 3 }),
+        box('hidden', 10, 20, 20, 30, { confidence: 0.7, frameIndex: 3 }),
+        box('other', 10, 20, 20, 30, { confidence: 0.7, frameIndex: 4 }),
+        box('shown', 30, 20, 40, 30, { confidence: 0.25, frameIndex: 3 }),
+      ],
+      'video',
+    );
+    const renderer = new SegmentationRenderer({ boxLabels: true });
+    await renderer.update(records);
+    const frame = {
+      ...labelOptions,
+      media: 'video' as const,
+      frameIndex: 3,
+      hiddenIds: ['hidden'],
+    };
+
+    const unlabeled = context();
+    renderer.render(unlabeled.value, frame);
+    expect(unlabeled.strokeRects).toHaveLength(2);
+    expect(unlabeled.texts.map((entry) => entry.text)).toEqual([
+      'plain',
+      'shown (0.250)',
+    ]);
+
+    const labeled = context();
+    renderer.render(labeled.value, { ...frame, boxLabel: 'pillow' });
+    expect(labeled.texts.map((entry) => entry.text)).toEqual([
+      'pillow plain',
+      'pillow shown (0.250)',
+    ]);
+    expect(labeled.fillRects.map((entry) => entry.fillStyle)).toEqual([
+      objectColor('plain'),
+      objectColor('shown'),
+    ]);
+  });
+
+  it('draws no labels unless enabled, and rejects invalid settings and values', async () => {
+    const renderer = new SegmentationRenderer();
+    await renderer.update(snapshot([box('a', 20, 30, 40, 50, { confidence: 0.912 })]));
+    const canvas = context();
+    renderer.render(canvas.value, { ...labelOptions, boxLabel: 'pillow' });
+    expect(canvas.texts).toEqual([]);
+    expect(canvas.fillRects).toEqual([]);
+    expect(canvas.calls.filter((entry) => entry.name === 'transform')).toHaveLength(1);
+
+    expect(
+      () => new SegmentationRenderer({ boxLabels: 'yes' as unknown as boolean }),
+    ).toThrow(TypeError);
+    expect(() =>
+      renderer.render(context().value, {
+        ...labelOptions,
+        boxLabel: 7 as unknown as string,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'invalid_render_options' }) as Error);
+    for (const confidence of [-0.1, 1.5, Number.NaN]) {
+      await expect(
+        new SegmentationRenderer().update(
+          snapshot([box('a', 20, 30, 40, 50, { confidence })]),
+        ),
+      ).rejects.toMatchObject({ code: 'invalid_render_options' });
+    }
+  });
+
+  it('formats label text from the parts that are present', () => {
+    expect(formatConfidence(0.94521)).toBe('0.945');
+    expect(formatBoxLabel('pillow', '3', 0.94521)).toBe('pillow 3 (0.945)');
+    expect(formatBoxLabel(' pillow ', '3', undefined)).toBe('pillow 3');
+    expect(formatBoxLabel(undefined, '12', 0)).toBe('12 (0.000)');
+    expect(formatBoxLabel('   ', '0', 1)).toBe('0 (1.000)');
+    expect(formatBoxLabel(undefined, '7', undefined)).toBe('7');
   });
 });

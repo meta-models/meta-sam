@@ -66,6 +66,8 @@ export interface VideoFrameCompositionOptions {
   readonly devicePixelRatio?: number | (() => number);
   /** Object IDs, not mask identities, to omit from this composition. */
   readonly hiddenIds?: ReadonlySet<string> | readonly string[];
+  /** Text shown before the object ID in box labels; see `boxLabels`. */
+  readonly boxLabel?: string;
 }
 
 export interface MaskOutlineOptions {
@@ -87,6 +89,13 @@ export interface SegmentationRendererOptions {
    * fill. Defaults to enabled; pass `false` for fill only.
    */
   readonly maskOutline?: boolean | MaskOutlineOptions;
+  /**
+   * Draw a label at each box's top-left corner: the render's `boxLabel`, the
+   * box's object ID, then its parser `confidence` in parentheses, as
+   * `pillow 3 (0.945)`. The label and the confidence appear only when present.
+   * Defaults to `false`.
+   */
+  readonly boxLabels?: boolean;
   /** Traced paths kept in the LRU cache. */
   readonly maxCachedPaths?: number;
   /** Total traced-path characters kept in the LRU cache. */
@@ -115,6 +124,8 @@ interface RenderOptionsBase {
   readonly source: Rectangle;
   readonly target: Rectangle;
   readonly hiddenIds?: ReadonlySet<string> | readonly string[];
+  /** Text shown before the object ID in box labels; see `boxLabels`. */
+  readonly boxLabel?: string;
 }
 
 export interface ImageRenderOptions extends RenderOptionsBase {
@@ -154,6 +165,7 @@ interface BoxPath {
   readonly top: number;
   readonly right: number;
   readonly bottom: number;
+  readonly confidence?: number;
 }
 
 interface RetainedState {
@@ -428,6 +440,41 @@ const MASK_OUTLINE_WIDTH_RATIO = 0.003;
 /** Contour width in target CSS pixels when the source size is unusable. */
 const FALLBACK_MASK_OUTLINE_WIDTH = 1.5;
 
+/** Box label geometry in target CSS pixels. */
+const BOX_LABEL_HEIGHT = 16;
+const BOX_LABEL_PADDING = 4;
+const BOX_LABEL_FONT =
+  '600 11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const BOX_LABEL_TEXT_COLOR = '#ffffff';
+
+/** A confidence as box labels show it: the value with three decimals. */
+export function formatConfidence(confidence: number): string {
+  return confidence.toFixed(3);
+}
+
+/**
+ * The text of one box label: the trimmed label, the object ID, then the
+ * confidence in parentheses, as `pillow 3 (0.945)`. A missing or blank label
+ * and a missing confidence are left out, so the object ID is always shown.
+ */
+export function formatBoxLabel(
+  label: string | undefined,
+  objectId: string,
+  confidence: number | undefined,
+): string {
+  return [
+    ...(label === undefined || label.trim().length === 0 ? [] : [label.trim()]),
+    objectId,
+    ...(confidence === undefined ? [] : [`(${formatConfidence(confidence)})`]),
+  ].join(' ');
+}
+
+function validateBoxLabel(label: unknown): void {
+  if (label !== undefined && typeof label !== 'string') {
+    throw new InvalidRenderOptionsError('boxLabel must be a string.');
+  }
+}
+
 interface OutlineSettings {
   readonly enabled: boolean;
   /** Configured width in source pixels; resolution-relative when absent. */
@@ -471,6 +518,7 @@ export class SegmentationRenderer {
   readonly #limits: Limits;
   readonly #maskFillOpacity: number;
   readonly #outline: OutlineSettings;
+  readonly #boxLabels: boolean;
   readonly #cache = new Map<RetainedMask, CachedPath>();
   #cacheComplexity = 0;
   #state: RetainedState | undefined;
@@ -485,6 +533,10 @@ export class SegmentationRenderer {
       'maskFillOpacity',
     );
     this.#outline = resolveMaskOutline(options.maskOutline);
+    if (options.boxLabels !== undefined && typeof options.boxLabels !== 'boolean') {
+      throw new TypeError('boxLabels must be a boolean.');
+    }
+    this.#boxLabels = options.boxLabels === true;
     this.#limits = {
       maxCachedPaths: positiveInteger(options.maxCachedPaths, 128, 'maxCachedPaths'),
       maxCachedComplexity: positiveInteger(
@@ -614,6 +666,7 @@ export class SegmentationRenderer {
         source,
         target,
         ...(options.hiddenIds === undefined ? {} : { hiddenIds: options.hiddenIds }),
+        ...(options.boxLabel === undefined ? {} : { boxLabel: options.boxLabel }),
       });
     } finally {
       ctx.restore();
@@ -629,6 +682,7 @@ export class SegmentationRenderer {
     validateRectangle(options.source, 'source');
     validateRectangle(options.target, 'target');
     if (options.media === 'video') validateFrame(options.frameIndex);
+    validateBoxLabel(options.boxLabel);
     const state = this.#state;
     if (state === undefined) return;
     if (state.media !== options.media) {
@@ -731,6 +785,74 @@ export class SegmentationRenderer {
           box.bottom - box.top,
         );
       }
+      if (this.#boxLabels) {
+        this.#paintBoxLabels(context, state, options, hidden, {
+          scaleX,
+          scaleY,
+          offsetX,
+          offsetY,
+        });
+      }
+    } finally {
+      context.restore();
+    }
+  }
+
+  /**
+   * Draws each visible box's label in target CSS pixels, so the label keeps
+   * one size whatever the media scale. The label sits on the box's top
+   * edge, above the box when the target has room and inside it otherwise, and
+   * it is shifted left when it would extend past the target's right edge.
+   */
+  #paintBoxLabels(
+    context: SegmentationCanvasContext,
+    state: RetainedState,
+    options: SegmentationRenderOptions,
+    hidden: ReadonlySet<string>,
+    transform: {
+      readonly scaleX: number;
+      readonly scaleY: number;
+      readonly offsetX: number;
+      readonly offsetY: number;
+    },
+  ): void {
+    const { scaleX, scaleY, offsetX, offsetY } = transform;
+    const { target } = options;
+    context.save();
+    try {
+      // Undo the source-to-target transform; any device-pixel scale stays.
+      context.transform(
+        1 / scaleX,
+        0,
+        0,
+        1 / scaleY,
+        -offsetX / scaleX,
+        -offsetY / scaleY,
+      );
+      context.globalAlpha = 1;
+      context.font = BOX_LABEL_FONT;
+      context.textAlign = 'left';
+      context.textBaseline = 'middle';
+      for (const box of state.boxes.values()) {
+        if (
+          hidden.has(box.objectId) ||
+          (options.media === 'video' &&
+            box.frameIndex !== undefined &&
+            box.frameIndex !== options.frameIndex)
+        ) {
+          continue;
+        }
+        const text = formatBoxLabel(options.boxLabel, box.objectId, box.confidence);
+        const width = context.measureText(text).width + 2 * BOX_LABEL_PADDING;
+        const left = offsetX + box.left * scaleX;
+        const top = offsetY + box.top * scaleY;
+        const x = Math.max(target.x, Math.min(left, target.x + target.width - width));
+        const y = top - BOX_LABEL_HEIGHT >= target.y ? top - BOX_LABEL_HEIGHT : top;
+        context.fillStyle = colorFor(box.objectId);
+        context.fillRect(x, y, width, BOX_LABEL_HEIGHT);
+        context.fillStyle = BOX_LABEL_TEXT_COLOR;
+        context.fillText(text, x + BOX_LABEL_PADDING, y + BOX_LABEL_HEIGHT / 2);
+      }
     } finally {
       context.restore();
     }
@@ -810,6 +932,16 @@ export class SegmentationRenderer {
         ) {
           throw new InvalidRenderOptionsError('Box coordinates are invalid.');
         }
+        if (
+          record.confidence !== undefined &&
+          (!Number.isFinite(record.confidence) ||
+            record.confidence < 0 ||
+            record.confidence > 1)
+        ) {
+          throw new InvalidRenderOptionsError(
+            'Box confidence must be a number from 0 through 1.',
+          );
+        }
         const identity = boxIdentity(record);
         boxes.set(identity, {
           identity,
@@ -821,6 +953,7 @@ export class SegmentationRenderer {
           top: record.top,
           right: record.right,
           bottom: record.bottom,
+          ...(record.confidence === undefined ? {} : { confidence: record.confidence }),
         });
       }
     }
@@ -835,6 +968,7 @@ export class SegmentationRenderer {
         box.top,
         box.right,
         box.bottom,
+        box.confidence ?? null,
       ]).length;
       if (complexity > this.#limits.maxRetainedComplexity) {
         throw new SegmentationResourceLimitError('maxRetainedComplexity');

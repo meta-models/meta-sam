@@ -66,7 +66,7 @@ export function SegmentedVideo() {
 
 `result` accepts either a cumulative `VideoSegmentationSnapshot` while parsing is
 in progress or the final `VideoSegmentationResult`. Updating `result`,
-`hiddenIds`, `objectFit`, or `devicePixelRatio` recomposes the retained decoded
+`hiddenIds`, `boxLabel`, `objectFit`, or `devicePixelRatio` recomposes the retained decoded
 frame without replacing the player or reopening the source.
 
 ## Props
@@ -77,6 +77,7 @@ frame without replacing the player or reopening the source.
 | `result`                                  | Cumulative video segmentation snapshot or final result. Image results are rejected at runtime.              |
 | `renderer`                                | Optional caller-owned `SegmentationRenderer`. When omitted, `Video` creates and disposes one.               |
 | `hiddenIds`                               | Object IDs omitted from the composition without changing retained segmentation state.                       |
+| `boxLabel`                                | Text shown before the object ID in box labels, when the renderer was created with `boxLabels: true`.        |
 | `objectFit`                               | `contain` (default), `cover`, or `fill` for both frame and overlay geometry.                                |
 | `devicePixelRatio`                        | Positive number or function read while sizing and rendering the canvas.                                     |
 | `loop`, `playbackRate`, `volume`, `muted` | Controlled playback and audio settings.                                                                     |

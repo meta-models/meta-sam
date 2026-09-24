@@ -272,9 +272,21 @@ are configurable:
 - Boxes use the same color at `globalAlpha = 1` and a source-coordinate line width
   of `2 / max(abs(scaleX), abs(scaleY))`.
 - Masks render before boxes.
+- With `boxLabels: true`, each visible box gets a label at its top-left corner
+  after all boxes are drawn. The text is
+  `formatBoxLabel(boxLabel, objectId, confidence)`: the render's trimmed
+  `boxLabel` option, the box's `objectId`, then its parser `confidence` with
+  three decimals in parentheses, as `pillow 3 (0.945)`. The label and the
+  confidence appear only when present, so a box shows `pillow 3` without a
+  confidence and `3 (0.945)` without a label. The text is white 11px on a 16px-high fill in the object color.
+  Labels are sized in target CSS pixels, so they do not scale with the media. A
+  label sits above its box when the target has room and inside the box's top
+  edge otherwise, and it shifts left to stay inside the target. Hidden objects
+  and boxes from other video frames get no label. Labels are off by default.
+  Pass `boxLabel` to `render()` or `renderVideoFrame()`; it must be a string.
 
-The renderer does not mutate records. Object colors, contour geometry, box styling,
-draw order, and source transforms are not configurable.
+The renderer does not mutate records. Object colors, contour geometry, box and
+label styling, draw order, and source transforms are not configurable.
 
 ## Lifecycle and transactional behavior
 
@@ -316,6 +328,7 @@ import {
 const options: SegmentationRendererOptions = {
   maskFillOpacity: 0.5,
   maskOutline: { width: 2, opacity: 0.9 },
+  boxLabels: true,
   maxCachedPaths: 128,
   maxCachedComplexity: 250_000,
   maxRecords: 20_000,
@@ -335,6 +348,7 @@ const renderer = new SegmentationRenderer(options);
 | `maskOutline`           | `true`                                     |
 | `maskOutline.width`     | `0.003 × min(source.width, source.height)` |
 | `maskOutline.opacity`   | `0.8`                                      |
+| `boxLabels`             | `false`                                    |
 | `maxCachedPaths`        | `128`                                      |
 | `maxCachedComplexity`   | `250_000`                                  |
 | `maxRecords`            | `20_000`                                   |
@@ -348,7 +362,8 @@ const renderer = new SegmentationRenderer(options);
 `maskFillOpacity` and `maskOutline.opacity` must be finite numbers in the inclusive
 range from `0` through `1`. An outline with opacity `0` remains enabled and is still
 stroked. `maskOutline` also accepts `true`, `false`, or `{ width }`; width is in source
-pixels and must be finite and greater than zero. Every resource override must be a
+pixels and must be finite and greater than zero. `boxLabels` must be a
+boolean. Every resource override must be a
 positive safe integer. Invalid constructor options throw `TypeError`. Constructor
 settings are resolved once, so later mutation of an options object has no effect.
 Cache limits evict least-recently-used paths. Other resource limits reject an update
@@ -364,6 +379,8 @@ Only the package root is public; deep imports are not supported.
 | -------------------------------- | ----------------------------------------------------------- |
 | `SegmentationRenderer`           | Retain parser views and render masks and boxes.             |
 | `objectColor`                    | The color assigned to an object ID, for legends and labels. |
+| `formatBoxLabel`                 | The text of one box label, for matching legends.            |
+| `formatConfidence`               | A confidence as box labels show it, for matching legends.   |
 | `SegmentationGraphicsError`      | Base class for package-specific errors.                     |
 | `UnsupportedMaskEncodingError`   | Reject a mask encoding other than `lossless` or `one_bit`.  |
 | `InvalidMaskPayloadError`        | Reject invalid mask data or a conflicting mask revision.    |
@@ -399,6 +416,8 @@ interface SegmentationRendererOptions {
   /** Mask fill opacity. Defaults to 0.35. */
   readonly maskFillOpacity?: number;
   readonly maskOutline?: boolean | MaskOutlineOptions;
+  /** Draw "<boxLabel> <objectId> (<confidence>)" box labels. Defaults to false. */
+  readonly boxLabels?: boolean;
   // Resource limit options are unchanged.
 }
 ```
