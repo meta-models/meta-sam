@@ -22,7 +22,7 @@
     {
       "language": "typescript",
       "distribution": "@meta-sam/parser",
-      "version": "0.0.12",
+      "version": "0.0.13",
       "contract_identity": "sha256:f7e20fa8ecc55932e8d516315dd1648e38a5348c10a7d150e87c5e0ea6cb7b83"
     },
     {
