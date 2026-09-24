@@ -10,7 +10,7 @@ SAM API responses emit one line per frame. A line is a frame marker `<Nf>` follo
 <7f>0<|box;x1=10;y1=20;x2=14;y2=24;w=100;h=80|><|mask;x=0;y=0;data=5,5,!!!!!(QO(0lu8?|>
 ```
 
-Each token may also carry an optional detection confidence `c`:
+When the request asks for it, each token may also carry an optional detection confidence `c`:
 
 ```text
 <7f>0<|box;x1=10;y1=20;x2=14;y2=24;w=100;h=80;c=0.75|><|mask;x=0;y=0;c=0.75;data=5,5,!!!!!(QO(0lu8?|>
@@ -30,6 +30,14 @@ A line may contain more than one object segment after the frame header. For comp
 - `c` is optional on both tokens. It is the detection confidence, written as a decimal number: an optional `-`, digits with an optional fraction or a fraction alone, and an optional exponent (`0.75`, `1`, `.25`, `7.5e-1`, `1e-05`). Its value must be finite and from 0 through 1; `-0` normalizes to `0`. Any other `c` value, a `c` without a value, and a repeated `c` are ignored: the record is kept without that token's confidence, and an `ignored_confidence` warning is reported. The box record and the mask record each carry their own token's value as `confidence`. Implementations must not require the box and mask values to match. When a token has no `c`, its record has no confidence. A missing confidence does not mean zero.
 
 `c` is optional per record, so one response can mix records with and without `c`.
+
+A request asks for `c` by setting the Responses metadata value `include_confidence` to the string `"true"`:
+
+```json
+{ "metadata": { "include_confidence": "true" } }
+```
+
+Readers must accept records without `c` in every response, including responses to requests that ask for it.
 
 Every diagnostic has a severity. An `error` means the parser dropped data. A `warning` means the parser kept the record and ignored part of the input. The warning codes are `ignored_field`, `ignored_token`, and `ignored_confidence`. Each warning code is reported once per stream for each field key, token name, or `c`, on the first line where it applies. A malformed record reports no warnings, so a later accepted record reports them instead.
 

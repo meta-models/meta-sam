@@ -207,7 +207,9 @@ is the detection confidence, a number from 0 through 1; each token's value becom
 `confidence` on its `SegmentationBoxRecord` or `SegmentationMaskRecord`. A token
 without `c` gives `confidence=None`, which does not mean zero, and a `c` value that
 is not a number from 0 through 1 is ignored with an `ignored_confidence` warning
-while the box and mask are kept. The mask tuple is
+while the box and mask are kept. Ask for `c` by setting the request's Responses
+metadata value `include_confidence` to `"true"`; the parser also accepts records
+without it. The mask tuple is
 `height,width,payload`, where the payload's first character selects the encoding:
 `~` for `lossless` (the API default) or `!` for `one_bit`. The payload is base85,
 not base64: after the marker its digits are printable ASCII `!` through `{` minus

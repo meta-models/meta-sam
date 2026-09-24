@@ -236,7 +236,8 @@ line per frame, with boxes and masks inline.
   `SegmentationMaskRecord`. When a token has no `c`, its record has no
   `confidence`; that does not mean zero. A `c` value that is not a number from 0
   through 1 is ignored with an `ignored_confidence` warning; the box and mask are
-  kept.
+  kept. Ask for `c` by setting the request's Responses metadata value
+  `include_confidence` to `"true"`; the parser also accepts records without it.
 - The mask is `data=H,W,<enc>payload`: the raster's **height then width**, then one
   encoding character — `~` for `lossless` (the API default) or `!` for `one_bit` —
   followed by the complete payload. The parser stores it as
