@@ -12,7 +12,7 @@ import { ToggleButton } from '@astryxdesign/core/ToggleButton';
 import { Tab, TabList } from '@astryxdesign/core/TabList';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { objectColor } from '@meta-sam/graphics';
+import { formatConfidence, objectColor } from '@meta-sam/graphics';
 import {
   frameIndexOf,
   type SegmentationDiagnostic,
@@ -54,6 +54,8 @@ interface ObjectSummary {
   readonly boxes: number;
   readonly masks: number;
   readonly frames: number;
+  /** Lowest and highest confidence across the object's records; absent without `c`. */
+  readonly confidence?: { readonly min: number; readonly max: number };
 }
 
 const RECORD_DISPLAY_LIMIT = 400;
@@ -61,7 +63,15 @@ const EMPTY_RECORDS: readonly SegmentationRecord[] = Object.freeze([]);
 const EMPTY_DIAGNOSTICS: readonly SegmentationDiagnostic[] = Object.freeze([]);
 
 function summarizeObjects(records: readonly SegmentationRecord[]): ObjectSummary[] {
-  const map = new Map<string, { boxes: number; masks: number; frames: Set<number> }>();
+  const map = new Map<
+    string,
+    {
+      boxes: number;
+      masks: number;
+      frames: Set<number>;
+      confidence?: { min: number; max: number };
+    }
+  >();
   for (const record of records) {
     if (record.kind === 'text') continue;
     let entry = map.get(record.objectId);
@@ -73,13 +83,31 @@ function summarizeObjects(records: readonly SegmentationRecord[]): ObjectSummary
     if (record.kind === 'mask') entry.masks += 1;
     const frameIndex = frameIndexOf(record);
     if (frameIndex !== undefined) entry.frames.add(frameIndex);
+    if (record.confidence !== undefined) {
+      entry.confidence =
+        entry.confidence === undefined
+          ? { min: record.confidence, max: record.confidence }
+          : {
+              min: Math.min(entry.confidence.min, record.confidence),
+              max: Math.max(entry.confidence.max, record.confidence),
+            };
+    }
   }
   return [...map.entries()].map(([objectId, entry]) => ({
     objectId,
     boxes: entry.boxes,
     masks: entry.masks,
     frames: entry.frames.size,
+    ...(entry.confidence === undefined ? {} : { confidence: entry.confidence }),
   }));
+}
+
+function objectConfidenceLabel(object: ObjectSummary): string | null {
+  if (object.confidence === undefined) return null;
+  const { min, max } = object.confidence;
+  return min === max
+    ? `confidence ${formatConfidence(min)}`
+    : `confidence ${formatConfidence(min)}–${formatConfidence(max)}`;
 }
 
 function recordSummary(record: SegmentationRecord): string {
@@ -87,10 +115,14 @@ function recordSummary(record: SegmentationRecord): string {
     case 'text':
       return record.text.length > 80 ? `${record.text.slice(0, 77)}…` : record.text;
     case 'box':
-      return `box (${record.left}, ${record.top}) → (${record.right}, ${record.bottom})`;
+      return `box (${record.left}, ${record.top}) → (${record.right}, ${record.bottom})${recordConfidence(record.confidence)}`;
     case 'mask':
-      return `mask ${record.mask.width}×${record.mask.height} · ${record.mask.encoding} · rev ${record.revision}`;
+      return `mask ${record.mask.width}×${record.mask.height} · ${record.mask.encoding} · rev ${record.revision}${recordConfidence(record.confidence)}`;
   }
+}
+
+function recordConfidence(confidence: number | undefined): string {
+  return confidence === undefined ? '' : ` · c ${formatConfidence(confidence)}`;
 }
 
 function frameOf(record: SegmentationRecord): number | null {
@@ -233,6 +265,11 @@ export function Inspector({
               >
                 {objects.map((object) => {
                   const isHidden = hidden.has(object.objectId);
+                  const confidence = objectConfidenceLabel(object);
+                  const counts =
+                    mediaKind === 'video'
+                      ? `${object.frames} frames · ${object.masks} masks · ${object.boxes} boxes`
+                      : `${object.masks} mask${object.masks === 1 ? '' : 's'} · ${object.boxes} box${object.boxes === 1 ? '' : 'es'}`;
                   return (
                     <ListItem
                       key={object.objectId}
@@ -248,9 +285,7 @@ export function Inspector({
                       label={<Text type="body">Object {object.objectId}</Text>}
                       description={
                         <Text type="supporting" color="secondary" hasTabularNumbers>
-                          {mediaKind === 'video'
-                            ? `${object.frames} frames · ${object.masks} masks · ${object.boxes} boxes`
-                            : `${object.masks} mask${object.masks === 1 ? '' : 's'} · ${object.boxes} box${object.boxes === 1 ? '' : 'es'}`}
+                          {confidence === null ? counts : `${confidence} · ${counts}`}
                         </Text>
                       }
                       endContent={

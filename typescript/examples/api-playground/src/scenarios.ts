@@ -4,6 +4,7 @@
 
 import type { ResponsesEvent } from '@meta-sam/parser';
 
+import confidenceFixture from './fixtures/confidence.json';
 import diagnosticFixture from './fixtures/fragmented-diagnostic.json';
 import failureFixture from './fixtures/failure.json';
 import incompleteFixture from './fixtures/incomplete.json';
@@ -32,6 +33,7 @@ export interface ReplayScenario {
 
 export const replayScenarios = Object.freeze([
   twoObjectsFixture,
+  confidenceFixture,
   diagnosticFixture,
   incompleteFixture,
   refusalFixture,
