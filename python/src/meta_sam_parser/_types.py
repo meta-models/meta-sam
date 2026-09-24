@@ -97,6 +97,12 @@ class SegmentationBoxRecord:
     right: float
     bottom: float
     frame: FrameReference | None = None
+    confidence: float | None = None
+    """Detection confidence from the box token's optional ``c`` field.
+
+    A finite number from 0 through 1, or ``None`` when the API omitted ``c``.
+    ``None`` does not mean zero.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +117,12 @@ class SegmentationMaskRecord:
     mask: SegmentationMask
     bounds: SegmentationMaskBounds
     frame: FrameReference | None = None
+    confidence: float | None = None
+    """Detection confidence from the mask token's optional ``c`` field.
+
+    A finite number from 0 through 1, or ``None`` when the API omitted ``c``.
+    ``None`` does not mean zero.
+    """
 
 
 SegmentationRecord: TypeAlias = (

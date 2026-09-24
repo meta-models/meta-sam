@@ -188,15 +188,26 @@ SAM 3.1 returns segmentation as special-token text in one `output_text` lane, on
 line per frame:
 
 ```text
-<Nf>id<|box;x1=..;y1=..;x2=..;y2=..;w=<frameW>;h=<frameH>|><|mask;x=0;y=0;data=<H>,<W>,<enc>payload|>,id<|box;...|><|mask;...|>
+<Nf>id<|box;x1=..;y1=..;x2=..;y2=..;w=<frameW>;h=<frameH>[;c=<confidence>]|><|mask;x=0;y=0;[c=<confidence>;]data=<H>,<W>,<enc>payload|>,id<|box;...|><|mask;...|>
 ```
 
 `<Nf>` is the zero-based frame index; frames without a visible object emit no
 line, so indices can skip. Each comma-separated record is a bare integer object
 id - stable for an object across the frames of one response and not a dense
 sequence - followed by one box and one mask. The parser retains the id as a string
-in `object_id`. Box corners and the `w`/`h` frame size are source pixels; the
-inclusive wire `x2`/`y2` become half-open `right`/`bottom`. The mask tuple is
+in `object_id`. Box and mask fields are `;`-separated `key=value` pairs that the
+parser reads by name, so their order does not matter. Whitespace around keys and
+values is trimmed and empty fields are skipped. Unknown keys, unknown tokens, and
+frame header fields are ignored: the record is kept and an `ignored_field` or
+`ignored_token` warning is reported once per stream. A repeated field other than
+`c`, a missing required field, or a record without exactly one box and one mask
+token makes the record malformed. Box corners and the `w`/`h` frame size are source pixels; the
+inclusive wire `x2`/`y2` become half-open `right`/`bottom`. The optional `c` field
+is the detection confidence, a number from 0 through 1; each token's value becomes
+`confidence` on its `SegmentationBoxRecord` or `SegmentationMaskRecord`. A token
+without `c` gives `confidence=None`, which does not mean zero, and a `c` value that
+is not a number from 0 through 1 is ignored with an `ignored_confidence` warning
+while the box and mask are kept. The mask tuple is
 `height,width,payload`, where the payload's first character selects the encoding:
 `~` for `lossless` (the API default) or `!` for `one_bit`. The payload is base85,
 not base64: after the marker its digits are printable ASCII `!` through `{` minus
@@ -327,7 +338,7 @@ The build command replaces `dist/` with exactly one wheel and one sdist for the
 version declared in `pyproject.toml`. The audit must pass against those exact
 files; it does not upload, publish, or read credentials.
 
-The Python conformance tests execute all 35 shared cases through
+The Python conformance tests execute all 40 shared cases through
 `parse_responses_stream()`, including stream lifecycle failures, completed and
 incomplete outcomes, diagnostics, and masks. From the repository root, `node
 scripts/validate-conformance` runs the same exact normalized cases in both

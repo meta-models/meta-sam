@@ -3,33 +3,33 @@
     "protocol": {
       "path": "protocol/sam3.md",
       "version_status": "unversioned",
-      "sha256": "236cbcc8febc5187286075d08761ea7c64c8962444f61b40038f666da5d3c1c4"
+      "sha256": "40bf2850d3ba02eb8b8553df42a68eb68369aadcf17253bc0b7692cd3c84c93e"
     },
     "schema": {
       "path": "conformance/case.schema.json",
       "schema_version": 1,
-      "sha256": "a30716d59010b8bea252479fa607786bff09cee5aad1b2290eff45b6c379246b"
+      "sha256": "8627078ebe964a5fcde1ad25497856885181ed74f3b318a24a0aac586855a9c4"
     },
     "corpus": {
       "path": "conformance/cases",
-      "case_count": 35,
+      "case_count": 40,
       "digest_algorithm": "sha256 over each sorted UTF-8 filename, NUL, raw file bytes, NUL",
-      "sha256": "7ecbd881a7f7b59b7cc7ad5b0ca876da9b8da228cd5cac6b63fe9e10d490384c"
+      "sha256": "a410ac9aee2ba6060c340d4677d9710424fba78923a5b590599c10ee58e027ca"
     },
-    "identity": "sha256:5596e254de42ab427e9167d3daab90edcd31663ed533c24c2e433c75587e99fa"
+    "identity": "sha256:f7e20fa8ecc55932e8d516315dd1648e38a5348c10a7d150e87c5e0ea6cb7b83"
   },
   "implementations": [
     {
       "language": "typescript",
       "distribution": "@meta-sam/parser",
       "version": "0.0.12",
-      "contract_identity": "sha256:5596e254de42ab427e9167d3daab90edcd31663ed533c24c2e433c75587e99fa"
+      "contract_identity": "sha256:f7e20fa8ecc55932e8d516315dd1648e38a5348c10a7d150e87c5e0ea6cb7b83"
     },
     {
       "language": "python",
       "distribution": "meta-sam-parser",
-      "version": "0.0.5",
-      "contract_identity": "sha256:5596e254de42ab427e9167d3daab90edcd31663ed533c24c2e433c75587e99fa"
+      "version": "0.0.6",
+      "contract_identity": "sha256:f7e20fa8ecc55932e8d516315dd1648e38a5348c10a7d150e87c5e0ea6cb7b83"
     }
   ]
 }
