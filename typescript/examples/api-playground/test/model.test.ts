@@ -175,6 +175,38 @@ describe('app reducer', () => {
     expect(rerun.media.upload.fileId).toBe('file-abc');
   });
 
+  it('keeps a valid score threshold across model changes and locks it while streaming', () => {
+    const groceries = findMediaExample('groceries')!;
+    expect(
+      createInitialState({ example: groceries }).request.scoreThreshold,
+    ).toBeNull();
+    expect(
+      createInitialState({ example: groceries, scoreThreshold: 1.5 }).request
+        .scoreThreshold,
+    ).toBeNull();
+    let state = createInitialState({ example: groceries, scoreThreshold: 0.4 });
+    expect(state.request.scoreThreshold).toBe(0.4);
+    state = appReducer(state, { type: 'setScoreThreshold', value: 0.9 });
+    expect(state.request.scoreThreshold).toBe(0.9);
+    for (const invalid of [2, -0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(appReducer(state, { type: 'setScoreThreshold', value: invalid })).toBe(
+        state,
+      );
+    }
+    state = appReducer(state, { type: 'setModel', runId: 1, model: 'alpha-model' });
+    expect(state.request).toEqual({ model: 'alpha-model', scoreThreshold: 0.9 });
+    state = appReducer(state, { type: 'runStart', runId: 2 });
+    expect(appReducer(state, { type: 'setScoreThreshold', value: 0.2 })).toBe(state);
+    state = appReducer(state, {
+      type: 'runTerminal',
+      runId: 2,
+      status: 'cancelled',
+      message: 'cancelled',
+    });
+    state = appReducer(state, { type: 'setScoreThreshold', value: null });
+    expect(state.request.scoreThreshold).toBeNull();
+  });
+
   it('keeps the noun phrase a run started with for its labels', () => {
     let state = createInitialState({ example: bedroom });
     expect(state.run.prompt).toBeNull();

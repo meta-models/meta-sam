@@ -647,6 +647,74 @@ test.describe('live relay', () => {
     );
   });
 
+  test('sends the image score threshold from the slider only for live images', async ({
+    page,
+  }) => {
+    let body: string | null = null;
+    await mockLive(page, (request) => {
+      body = request.postData();
+    });
+    await page.goto('/?example=groceries');
+    await expect(page.getByText(/configured-model via sam.example.test/)).toBeVisible();
+    const filter = page.getByRole('switch', { name: /Filter by score/ });
+    const slider = page.getByRole('slider', { name: 'Score threshold' });
+    await expect(filter).not.toBeChecked();
+    await expect(slider).toHaveCount(0);
+
+    await filter.click();
+    await expect(slider).toHaveAttribute('aria-valuenow', '0.5');
+    await expect(page).toHaveURL(/[?&]threshold=0\.5(&|$)/);
+    await slider.focus();
+    for (let step = 0; step < 15; step += 1) await slider.press('ArrowLeft');
+    await expect(slider).toHaveAttribute('aria-valuenow', '0.35');
+    await expect(slider).toHaveAttribute('aria-valuetext', '0.35');
+    await expect(page).toHaveURL(/[?&]threshold=0\.35(&|$)/);
+
+    await page.getByRole('button', { name: 'Code', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Request code' });
+    await expect(dialog.getByTestId('code-example')).toContainText(
+      '"score_threshold": "0.35"',
+    );
+    await dialog.getByRole('tab', { name: 'TypeScript' }).click();
+    await expect(dialog.getByTestId('code-example')).toContainText(
+      '"score_threshold": "0.35"',
+    );
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+
+    const segment = page.getByRole('button', { name: 'Segment', exact: true });
+    await expect(segment).toBeEnabled();
+    await segment.click();
+    await expect(page.getByTestId('run-status')).toContainText('completed');
+    expect(body).toMatch(/name="score_threshold"\r\n\r\n0\.35\r\n/);
+
+    // Switching filtering off sends nothing and hides the slider; switching it
+    // back on restores the last value.
+    await filter.click();
+    await expect(slider).toHaveCount(0);
+    await expect(page).not.toHaveURL(/threshold=/);
+    await segment.click();
+    await expect(page.getByTestId('run-status')).toContainText('completed');
+    expect(body).not.toContain('name="score_threshold"');
+    await filter.click();
+    await expect(slider).toHaveAttribute('aria-valuenow', '0.35');
+
+    await page.goto('/?example=truck&threshold=0.9');
+    await expect(page.getByRole('switch', { name: /Filter by score/ })).toBeChecked();
+    await expect(page.getByRole('slider', { name: 'Score threshold' })).toHaveAttribute(
+      'aria-valuenow',
+      '0.9',
+    );
+
+    await page.goto('/?example=bedroom&threshold=0.35');
+    await expect(page.getByText(/configured-model via sam.example.test/)).toBeVisible();
+    await expect(page.getByRole('switch', { name: /Filter by score/ })).toHaveCount(0);
+    await expect(page).not.toHaveURL(/threshold=/);
+
+    await page.goto('/?fixture=two-objects');
+    await expect(page.getByRole('switch', { name: /Filter by score/ })).toHaveCount(0);
+  });
+
   test('uploads an example video once and reuses the handle for a second run', async ({
     page,
   }) => {

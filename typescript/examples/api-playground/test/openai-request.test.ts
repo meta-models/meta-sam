@@ -114,6 +114,23 @@ describe('Model API Responses request', () => {
     expect(() => normalizeSAMPrompt('   ')).toThrow(/noun phrase/);
   });
 
+  it('sends a score threshold as string metadata only when one is set', () => {
+    const withThreshold = JSON.parse(
+      buildImageResponsesRequest(config, { ...imageInput, scoreThreshold: 0.35 }).init
+        .body,
+    ) as Record<string, unknown>;
+    expect(withThreshold.metadata).toEqual({ score_threshold: '0.35' });
+    const atZero = JSON.parse(
+      buildImageResponsesRequest(config, { ...imageInput, scoreThreshold: 0 }).init
+        .body,
+    ) as Record<string, unknown>;
+    expect(atZero.metadata).toEqual({ score_threshold: '0' });
+    const without = JSON.parse(
+      buildImageResponsesRequest(config, imageInput).init.body,
+    ) as Record<string, unknown>;
+    expect(without).not.toHaveProperty('metadata');
+  });
+
   it('uploads video through the Files API and references the opaque handle', () => {
     const upload = buildFileUploadRequest(config, videoMedia);
     expect(upload.endpoint.href).toBe('https://api.meta.ai/v1/files');

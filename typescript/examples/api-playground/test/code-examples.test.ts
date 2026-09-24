@@ -40,6 +40,17 @@ describe('code examples', () => {
     expect(examples.typescript).not.toContain('upload.append');
   });
 
+  it('adds a score threshold to image examples as string metadata', () => {
+    const examples = createCodeExamples({ ...image, scoreThreshold: 0.35 });
+    for (const source of [examples.curl, examples.typescript]) {
+      expect(source).toContain('"metadata": {');
+      expect(source).toContain('"score_threshold": "0.35"');
+    }
+    const unset = createCodeExamples({ ...image, scoreThreshold: null });
+    expect(unset).toEqual(createCodeExamples(image));
+    expect(unset.curl).not.toContain('score_threshold');
+  });
+
   it('uses the published package names and real parser APIs', () => {
     for (const example of [createCodeExamples(image), createCodeExamples(video)]) {
       expect(example.typescript).toContain("from '@meta-sam/parser'");

@@ -334,6 +334,36 @@ describe('LiveTransport', () => {
     });
     expect(calls[1]?.body.get('file_id')).toBeNull();
     expect(calls[1]?.body.get('media')).not.toBeNull();
+    expect(calls[1]?.body.get('score_threshold')).toBeNull();
+  });
+
+  it('sends a score threshold with image requests only', async () => {
+    const calls = stubFetch(
+      () =>
+        new Response('{"type":"response.completed"}\n', {
+          headers: { 'Content-Type': 'application/x-ndjson' },
+        }),
+    );
+    await drain({
+      fixtureId: null,
+      kind: 'image',
+      prompt: 'duck',
+      model: 'sam-3.1',
+      media: new Blob(['png'], { type: 'image/png' }),
+      filename: 'duck.png',
+      scoreThreshold: 0.35,
+    });
+    expect(calls[0]?.body.get('score_threshold')).toBe('0.35');
+
+    await drain({
+      fixtureId: null,
+      kind: 'video',
+      prompt: 'pillow',
+      model: 'sam-3.1',
+      fileId: 'file-abc123',
+      scoreThreshold: 0.35,
+    });
+    expect(calls[1]?.body.get('score_threshold')).toBeNull();
   });
 
   it('refuses a live video request without an uploaded handle', async () => {
