@@ -1,5 +1,12 @@
 # @meta-sam/graphics
 
+## 0.1.10
+
+### Patch Changes
+
+- Updated dependencies [e8c74a3]
+  - @meta-sam/parser@0.0.13
+
 ## 0.1.9
 
 ### Patch Changes

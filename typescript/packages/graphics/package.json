@@ -1,6 +1,6 @@
 {
   "name": "@meta-sam/graphics",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Retained Canvas 2D renderer for SAM 3 segmentation",
   "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://dev.meta.ai/",
@@ -33,7 +33,7 @@
     "node": "^20.17.0 || >=22.9.0"
   },
   "dependencies": {
-    "@meta-sam/parser": "0.0.12"
+    "@meta-sam/parser": "0.0.13"
   },
   "scripts": {
     "build": "tsc -b",

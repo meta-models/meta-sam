@@ -1,5 +1,13 @@
 # @meta-sam/react
 
+## 0.1.11
+
+### Patch Changes
+
+- Updated dependencies [e8c74a3]
+  - @meta-sam/parser@0.0.13
+  - @meta-sam/graphics@0.1.10
+
 ## 0.1.10
 
 ### Patch Changes
