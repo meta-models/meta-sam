@@ -16,6 +16,8 @@ export interface CodeExampleRequest {
   readonly fileId?: string | null;
   /** Minimum detection score for an image request, sent as metadata. */
   readonly scoreThreshold?: number | null;
+  /** Ask for the optional `c` confidence, sent as metadata. */
+  readonly includeConfidence?: boolean | null;
 }
 
 export interface CodeExamples {
@@ -41,6 +43,21 @@ function unquotedHeredoc(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('$', '\\$').replaceAll('`', '\\`');
 }
 
+function requestMetadata(
+  request: CodeExampleRequest,
+  options: { readonly scoreThreshold: boolean },
+): { metadata?: Record<string, string> } {
+  const metadata: Record<string, string> = {
+    ...(options.scoreThreshold &&
+    request.scoreThreshold !== undefined &&
+    request.scoreThreshold !== null
+      ? { score_threshold: String(request.scoreThreshold) }
+      : {}),
+    ...(request.includeConfidence === true ? { include_confidence: 'true' } : {}),
+  };
+  return Object.keys(metadata).length === 0 ? {} : { metadata };
+}
+
 function imageBody(request: CodeExampleRequest, imageUrl: string) {
   return {
     model: request.model,
@@ -55,9 +72,7 @@ function imageBody(request: CodeExampleRequest, imageUrl: string) {
         ],
       },
     ],
-    ...(request.scoreThreshold === undefined || request.scoreThreshold === null
-      ? {}
-      : { metadata: { score_threshold: String(request.scoreThreshold) } }),
+    ...requestMetadata(request, { scoreThreshold: true }),
   };
 }
 
@@ -75,6 +90,7 @@ function videoBody(request: CodeExampleRequest, fileId: string) {
         ],
       },
     ],
+    ...requestMetadata(request, { scoreThreshold: false }),
   };
 }
 

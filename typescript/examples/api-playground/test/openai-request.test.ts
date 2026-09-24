@@ -131,6 +131,41 @@ describe('Model API Responses request', () => {
     expect(without).not.toHaveProperty('metadata');
   });
 
+  it('asks for confidence through string metadata on image and video requests', () => {
+    const image = JSON.parse(
+      buildImageResponsesRequest(config, {
+        ...imageInput,
+        scoreThreshold: 0.35,
+        includeConfidence: true,
+      }).init.body,
+    ) as Record<string, unknown>;
+    expect(image.metadata).toEqual({
+      score_threshold: '0.35',
+      include_confidence: 'true',
+    });
+    const optedOut = JSON.parse(
+      buildImageResponsesRequest(config, { ...imageInput, includeConfidence: false })
+        .init.body,
+    ) as Record<string, unknown>;
+    expect(optedOut.metadata).toEqual({ include_confidence: 'false' });
+    const video = JSON.parse(
+      buildVideoResponsesRequest(
+        config,
+        { prompt: 'pillow', model: 'sam-3.1', includeConfidence: true },
+        'file-123',
+      ).init.body,
+    ) as Record<string, unknown>;
+    expect(video.metadata).toEqual({ include_confidence: 'true' });
+    const plainVideo = JSON.parse(
+      buildVideoResponsesRequest(
+        config,
+        { prompt: 'pillow', model: 'sam-3.1' },
+        'file-123',
+      ).init.body,
+    ) as Record<string, unknown>;
+    expect(plainVideo).not.toHaveProperty('metadata');
+  });
+
   it('uploads video through the Files API and references the opaque handle', () => {
     const upload = buildFileUploadRequest(config, videoMedia);
     expect(upload.endpoint.href).toBe('https://api.meta.ai/v1/files');
