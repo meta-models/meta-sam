@@ -17,11 +17,20 @@ export const MAX_PROMPT_LENGTH = 160;
 export const MAX_FILENAME_LENGTH = 200;
 export const MAX_FILE_ID_LENGTH = 126;
 export const MAX_MODEL_ID_LENGTH = 120;
+export const MAX_SCORE_THRESHOLD_LENGTH = 32;
+/** A plain decimal: digits with an optional fraction, or a fraction alone. */
+const SCORE_THRESHOLD_PATTERN = /^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)$/;
 /** The opaque Files API handle the browser is allowed to hold and send back. */
 export const FILE_ID_PATTERN = /^file-[A-Za-z0-9_-]{1,120}$/;
 export const MODEL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,120}$/;
 const uploadFields = new Set(['media']);
-const responsesFields = new Set(['prompt', 'model', 'media', 'file_id']);
+const responsesFields = new Set([
+  'prompt',
+  'model',
+  'media',
+  'file_id',
+  'score_threshold',
+]);
 const MODEL_CACHE_TTL = 5 * 60 * 1_000;
 const MAX_STREAM_SIZE = 64 * 1024 * 1024;
 // Terminal Responses events (`content_part.done`, `output_item.done`,
@@ -52,8 +61,11 @@ export type MultipartFields = {
   prompt?: string;
   model?: string;
   file_id?: string;
+  score_threshold?: string;
   media?: MultipartMedia;
 };
+
+type MultipartTextField = 'prompt' | 'model' | 'file_id' | 'score_threshold';
 
 export type ValidatedMedia = Readonly<
   | {
@@ -75,6 +87,8 @@ export type ImageRelayInput = Readonly<{
   model?: string;
   kind: 'image';
   media: ValidatedMedia & { kind: 'image' };
+  /** Minimum detection score from 0 through 1; absent means no filtering. */
+  scoreThreshold?: number;
 }>;
 
 export type VideoRelayInput = Readonly<{
@@ -380,6 +394,20 @@ function validateOptionalModel(value: unknown): string | undefined {
   return model;
 }
 
+function validateOptionalScoreThreshold(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  const text = typeof value === 'string' ? value.trim() : '';
+  const threshold = SCORE_THRESHOLD_PATTERN.test(text) ? Number(text) : Number.NaN;
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+    throw new HttpError(
+      400,
+      'invalid_score_threshold',
+      'The score threshold must be a number from 0 through 1.',
+    );
+  }
+  return threshold;
+}
+
 /**
  * Validates the decoded multipart fields of an upload request. Only MP4 video
  * is accepted: the Files API handle exists for the streaming video path, and an
@@ -403,6 +431,7 @@ export function validateUploadInput(fields: MultipartFields): Readonly<{
 export function validateMediaInput(fields: MultipartFields): RelayInput {
   const prompt = validatePrompt(fields.prompt);
   const model = validateOptionalModel(fields.model);
+  const scoreThreshold = validateOptionalScoreThreshold(fields.score_threshold);
   const hasFileId = fields.file_id !== undefined;
   const hasMedia = fields.media !== undefined;
   if (hasFileId && hasMedia) {
@@ -415,6 +444,13 @@ export function validateMediaInput(fields: MultipartFields): RelayInput {
   if (hasFileId) {
     if (typeof fields.file_id !== 'string' || !FILE_ID_PATTERN.test(fields.file_id)) {
       throw new HttpError(400, 'invalid_file_id', 'The file handle is invalid.');
+    }
+    if (scoreThreshold !== undefined) {
+      throw new HttpError(
+        400,
+        'invalid_score_threshold',
+        'The score threshold applies to image requests only.',
+      );
     }
     return Object.freeze({
       prompt,
@@ -436,6 +472,7 @@ export function validateMediaInput(fields: MultipartFields): RelayInput {
     ...(model === undefined ? {} : { model }),
     kind: 'image',
     media,
+    ...(scoreThreshold === undefined ? {} : { scoreThreshold }),
   });
 }
 
@@ -596,23 +633,24 @@ export function parseMultipartBody(
         contentType: part.contentType,
       };
     } else {
-      const isPrompt = part.name === 'prompt';
-      const isModel = part.name === 'model';
-      const code = isPrompt
-        ? 'invalid_prompt'
-        : isModel
-          ? 'invalid_model'
-          : 'invalid_file_id';
-      const limit = isPrompt
-        ? 4 * MAX_PROMPT_LENGTH
-        : isModel
-          ? 4 * MAX_MODEL_ID_LENGTH
-          : MAX_FILE_ID_LENGTH;
+      const name = part.name as MultipartTextField;
+      const code = {
+        prompt: 'invalid_prompt',
+        model: 'invalid_model',
+        file_id: 'invalid_file_id',
+        score_threshold: 'invalid_score_threshold',
+      }[name];
+      const limit = {
+        prompt: 4 * MAX_PROMPT_LENGTH,
+        model: 4 * MAX_MODEL_ID_LENGTH,
+        file_id: MAX_FILE_ID_LENGTH,
+        score_threshold: MAX_SCORE_THRESHOLD_LENGTH,
+      }[name];
       if (part.filename !== undefined || data.length > limit) {
         throw new HttpError(400, code, `The ${part.name} field is invalid.`);
       }
       try {
-        fields[part.name as 'prompt' | 'model' | 'file_id'] = new TextDecoder('utf-8', {
+        fields[name] = new TextDecoder('utf-8', {
           fatal: true,
         }).decode(data);
       } catch {

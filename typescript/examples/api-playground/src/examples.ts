@@ -46,7 +46,7 @@ export const mediaExamples: readonly MediaExample[] = Object.freeze([
     id: 'groceries',
     kind: 'image',
     title: 'Groceries',
-    prompt: 'apple',
+    prompt: 'paper bag',
     url: '/media/groceries.jpg',
     width: 800,
     height: 534,

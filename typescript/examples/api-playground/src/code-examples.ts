@@ -14,6 +14,8 @@ export interface CodeExampleRequest {
   readonly filename: string;
   readonly mimeType: string;
   readonly fileId?: string | null;
+  /** Minimum detection score for an image request, sent as metadata. */
+  readonly scoreThreshold?: number | null;
 }
 
 export interface CodeExamples {
@@ -53,6 +55,9 @@ function imageBody(request: CodeExampleRequest, imageUrl: string) {
         ],
       },
     ],
+    ...(request.scoreThreshold === undefined || request.scoreThreshold === null
+      ? {}
+      : { metadata: { score_threshold: String(request.scoreThreshold) } }),
   };
 }
 

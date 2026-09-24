@@ -18,6 +18,7 @@ type ModelRequestInput = {
 
 type ImageRequestInput = ModelRequestInput & {
   media: ValidatedMedia;
+  scoreThreshold?: number;
 };
 
 type RequestBody = string | FormData;
@@ -74,7 +75,8 @@ function userMessage(prompt: string, mediaPart: JsonRecord): readonly JsonRecord
  * Image requests are unary. The SAM video Responses API answers a
  * streaming image request with `response.failed`, so the image path asks for a
  * single JSON body and adapts it into the same event stream the video path
- * produces natively.
+ * produces natively. A score threshold travels as the string metadata value
+ * `score_threshold`, because Responses metadata is a string-to-string map.
  */
 export function buildImageResponsesRequest(
   config: ServerConfig,
@@ -96,6 +98,9 @@ export function buildImageResponsesRequest(
           type: 'input_image',
           image_url: `data:${input.media.mimeType};base64,${input.media.bytes.toString('base64')}`,
         }),
+        ...(input.scoreThreshold === undefined
+          ? {}
+          : { metadata: { score_threshold: String(input.scoreThreshold) } }),
       }),
     },
   };

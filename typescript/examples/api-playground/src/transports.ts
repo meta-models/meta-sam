@@ -30,6 +30,8 @@ export interface StreamRequest {
   readonly filename?: string;
   /** The `file-…` handle a live video request references. */
   readonly fileId?: string;
+  /** Minimum detection score for a live image request; video ignores it. */
+  readonly scoreThreshold?: number;
 }
 
 export interface UploadedFile {
@@ -338,6 +340,9 @@ export class LiveTransport implements ResponsesTransport {
         throw new Error('A live request requires media bytes.');
       }
       body.append('media', request.media, request.filename ?? `media.${request.kind}`);
+      if (request.scoreThreshold !== undefined) {
+        body.append('score_threshold', String(request.scoreThreshold));
+      }
     }
     const response = await fetch('/api/responses', {
       method: 'POST',

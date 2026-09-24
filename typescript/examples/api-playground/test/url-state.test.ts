@@ -15,6 +15,7 @@ import {
 
 const fixture = getReplayScenario('two-objects');
 const bedroom = findMediaExample('bedroom')!;
+const groceries = findMediaExample('groceries')!;
 
 describe('safe URL state', () => {
   it('round-trips a fixture selection, prompt, and no foreign params', () => {
@@ -88,6 +89,7 @@ describe('safe URL state', () => {
       fixtureId: null,
       prompt: null,
       model: null,
+      scoreThreshold: null,
       showOverlay: false,
       inspectorTab: null,
     });
@@ -106,5 +108,37 @@ describe('safe URL state', () => {
     expect(
       readSafeUrlState(new URL('https://playground.test/?model=invalid%20model')).model,
     ).toBeNull();
+  });
+
+  it('round-trips a live image score threshold and omits it for video and replays', () => {
+    let image = createInitialState({ example: groceries });
+    image = appReducer(image, { type: 'setScoreThreshold', value: 0.35 });
+    const next = createSafeUrl(
+      safeUrlSettingsFromState(image),
+      new URL('https://playground.test/'),
+    );
+    expect(next.searchParams.get('threshold')).toBe('0.35');
+    expect(readSafeUrlState(next).scoreThreshold).toBe(0.35);
+
+    const video = createInitialState({ example: bedroom, scoreThreshold: 0.35 });
+    const replay = createInitialState({ fixture, scoreThreshold: 0.35 });
+    for (const state of [video, replay]) {
+      const url = createSafeUrl(
+        safeUrlSettingsFromState(state),
+        new URL('https://playground.test/'),
+      );
+      expect(url.searchParams.has('threshold')).toBe(false);
+    }
+
+    const read = (value: string) =>
+      readSafeUrlState(
+        new URL(`https://playground.test/?threshold=${encodeURIComponent(value)}`),
+      ).scoreThreshold;
+    expect(read('0')).toBe(0);
+    expect(read('1')).toBe(1);
+    expect(read('.5')).toBe(0.5);
+    for (const invalid of ['1.5', '-0.1', 'abc', '', '1e-1', 'NaN', '0x1']) {
+      expect(read(invalid)).toBeNull();
+    }
   });
 });

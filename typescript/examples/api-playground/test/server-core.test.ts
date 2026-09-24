@@ -654,6 +654,70 @@ describe('live server boundary', () => {
     ).toMatchObject({ kind: 'image', media: { mimeType: 'image/png' } });
   });
 
+  it('accepts a score threshold from 0 through 1 for images only', () => {
+    const boundary = 'boundary-test';
+    const fields = parseMultipartBody(
+      multipart([
+        { name: 'prompt', data: 'apple' },
+        { name: 'score_threshold', data: '0.35' },
+        { name: 'media', filename: 'a.png', data: mediaBytes['image/png'] },
+      ]),
+      boundary,
+    );
+    expect(fields.score_threshold).toBe('0.35');
+    expect(validateMediaInput(fields)).toMatchObject({
+      kind: 'image',
+      scoreThreshold: 0.35,
+    });
+    expect(
+      validateMediaInput({
+        prompt: 'apple',
+        media: { bytes: mediaBytes['image/png'] },
+      }),
+    ).not.toHaveProperty('scoreThreshold');
+    for (const [value, expected] of [
+      ['0', 0],
+      ['1', 1],
+      ['.5', 0.5],
+      [' 0.5 ', 0.5],
+    ] as const) {
+      expect(
+        validateMediaInput({
+          prompt: 'apple',
+          score_threshold: value,
+          media: { bytes: mediaBytes['image/png'] },
+        }),
+      ).toMatchObject({ scoreThreshold: expected });
+    }
+
+    const expectCode = (fields: MultipartFields): void => {
+      let caught: unknown;
+      try {
+        validateMediaInput(fields);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ code: 'invalid_score_threshold' });
+    };
+    for (const value of ['1.5', '-0.1', 'abc', '', '1e-1', 'NaN', 'Infinity', '0x1']) {
+      expectCode({
+        prompt: 'apple',
+        score_threshold: value,
+        media: { bytes: mediaBytes['image/png'] },
+      });
+    }
+    expectCode({ prompt: 'apple', score_threshold: '0.5', file_id: 'file-abc123' });
+    expect(() =>
+      parseMultipartBody(
+        multipart([
+          { name: 'prompt', data: 'apple' },
+          { name: 'score_threshold', data: '0.'.padEnd(33, '5') },
+        ]),
+        boundary,
+      ),
+    ).toThrow(/score_threshold field is invalid/);
+  });
+
   it('validates media bytes, declared types, size, and prompt bounds', () => {
     const image = validateMediaInput({
       prompt: '  rectangular panel ',

@@ -25,8 +25,10 @@ import {
   SegmentedControlItem,
 } from '@astryxdesign/core/SegmentedControl';
 import { Selector } from '@astryxdesign/core/Selector';
+import { Slider } from '@astryxdesign/core/Slider';
 import { StackItem } from '@astryxdesign/core/Stack';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
+import { Switch } from '@astryxdesign/core/Switch';
 import { Tab, TabList } from '@astryxdesign/core/TabList';
 import { Text } from '@astryxdesign/core/Text';
 import { TextInput } from '@astryxdesign/core/TextInput';
@@ -156,6 +158,8 @@ interface ModelCatalog {
 
 type CodeTab = 'curl' | 'typescript';
 
+const DEFAULT_SCORE_THRESHOLD = 0.5;
+
 function initialState() {
   const settings = readSafeUrlState(new URL(window.location.href));
   const fixture = findReplayScenario(settings.fixtureId);
@@ -166,6 +170,9 @@ function initialState() {
     ...(example === undefined ? {} : { example }),
     ...(settings.prompt === null ? {} : { prompt: settings.prompt }),
     ...(settings.model === null ? {} : { model: settings.model }),
+    ...(settings.scoreThreshold === null
+      ? {}
+      : { scoreThreshold: settings.scoreThreshold }),
     showOverlay: settings.showOverlay,
     ...(settings.inspectorTab === null ? {} : { inspectorTab: settings.inspectorTab }),
   });
@@ -393,6 +400,11 @@ async function executeRun({
           ? {}
           : { media: bytes, filename: state.media.sourceName ?? undefined }),
         ...(fileId === null ? {} : { fileId }),
+        ...(kind === 'image' &&
+        state.run.transport === 'live' &&
+        state.request.scoreThreshold !== null
+          ? { scoreThreshold: state.request.scoreThreshold }
+          : {}),
       };
       const events = tap(transport.stream(request, controller.signal));
       if (kind === 'image') {
@@ -484,6 +496,11 @@ export function App(): React.JSX.Element {
   } | null>(null);
   const uploadedUrl = useRef<string | null>(null);
   const runGeneration = useRef(state.run.runId);
+  // Where the slider starts when score filtering is switched on: the last value
+  // used in this session, else the midpoint of the range.
+  const lastScoreThreshold = useRef(
+    state.request.scoreThreshold ?? DEFAULT_SCORE_THRESHOLD,
+  );
   const selectionGeneration = useRef(0);
 
   const isRunning = state.run.status === 'streaming';
@@ -622,6 +639,11 @@ export function App(): React.JSX.Element {
   const isLiveVideo =
     state.run.transport === 'live' &&
     media.kind === 'video' &&
+    media.sourceUrl !== null;
+  // The score threshold is an image-only request option; replays never send one.
+  const isLiveImage =
+    state.run.transport === 'live' &&
+    media.kind === 'image' &&
     media.sourceUrl !== null;
 
   useEffect(() => {
@@ -765,8 +787,17 @@ export function App(): React.JSX.Element {
       mimeType:
         state.media.file?.type || inferMediaMimeType(filename, state.media.kind),
       fileId: state.media.upload.fileId,
+      scoreThreshold: isLiveImage ? state.request.scoreThreshold : null,
     });
-  }, [currentModel, isCodeOpen, live.endpointOrigin, state.media, state.prompt.text]);
+  }, [
+    currentModel,
+    isCodeOpen,
+    isLiveImage,
+    live.endpointOrigin,
+    state.media,
+    state.prompt.text,
+    state.request.scoreThreshold,
+  ]);
 
   const run = () => {
     if (!canRun || state.media.kind === null || state.media.sourceUrl === null) return;
@@ -951,6 +982,48 @@ export function App(): React.JSX.Element {
             if (event.key === 'Enter' && canRun) void run();
           }}
         />
+        {isLiveImage ? (
+          <VStack gap={2} data-testid="score-threshold">
+            <Switch
+              label="Filter by score"
+              description="Off sends no threshold."
+              size="sm"
+              value={state.request.scoreThreshold !== null}
+              isDisabled={isRunning || !live.configured}
+              onChange={(checked) =>
+                dispatch({
+                  type: 'setScoreThreshold',
+                  value: checked ? lastScoreThreshold.current : null,
+                })
+              }
+            />
+            {state.request.scoreThreshold !== null ? (
+              <Slider
+                label="Score threshold"
+                description="Keep objects that score at least this value."
+                min={0}
+                max={1}
+                step={0.01}
+                value={state.request.scoreThreshold}
+                valueDisplay="text"
+                formatValue={(value) => value.toFixed(2)}
+                width="100%"
+                isDisabled={isRunning || !live.configured}
+                disabledMessage={
+                  isRunning
+                    ? 'The threshold cannot change while a run is streaming.'
+                    : !live.configured
+                      ? 'Live API not configured.'
+                      : undefined
+                }
+                onChange={(value: number) => {
+                  lastScoreThreshold.current = value;
+                  dispatch({ type: 'setScoreThreshold', value });
+                }}
+              />
+            ) : null}
+          </VStack>
+        ) : null}
         <HStack gap={2}>
           <StackItem size="fill">
             <Button

@@ -69,6 +69,12 @@ export interface PromptState {
 
 export interface RequestState {
   readonly model: string | null;
+  /**
+   * The minimum detection score, from 0 through 1, that live image runs send
+   * as `metadata.score_threshold`. `null` sends none. Video runs never send
+   * it.
+   */
+  readonly scoreThreshold: number | null;
 }
 
 export interface RunState {
@@ -139,8 +145,16 @@ export interface InitialSettings {
   readonly fixture?: ReplayScenario;
   readonly prompt?: string;
   readonly model?: string;
+  readonly scoreThreshold?: number;
   readonly showOverlay?: boolean;
   readonly inspectorTab?: InspectorTab;
+}
+
+/** A score threshold the API accepts: a finite number from 0 through 1. */
+export function isScoreThreshold(value: unknown): value is number {
+  return (
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+  );
 }
 
 const idleUpload: MediaUploadState = Object.freeze({
@@ -243,6 +257,9 @@ export function createInitialState(settings: InitialSettings = {}): AppState {
         settings.model !== undefined && MODEL_ID_PATTERN.test(settings.model)
           ? settings.model
           : null,
+      scoreThreshold: isScoreThreshold(settings.scoreThreshold)
+        ? settings.scoreThreshold
+        : null,
     },
     run: {
       runId: 0,
@@ -286,6 +303,7 @@ export type AppAction =
   | { readonly type: 'setPrompt'; readonly text: string }
   | { readonly type: 'initializeModel'; readonly model: string }
   | { readonly type: 'setModel'; readonly runId: number; readonly model: string }
+  | { readonly type: 'setScoreThreshold'; readonly value: number | null }
   | { readonly type: 'setTheme'; readonly theme: ThemeMode }
   | { readonly type: 'mediaUploadStart'; readonly generation: number }
   | {
@@ -450,7 +468,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
     case 'initializeModel':
       return state.request.model === null && MODEL_ID_PATTERN.test(action.model)
-        ? { ...state, request: { model: action.model } }
+        ? { ...state, request: { ...state.request, model: action.model } }
         : state;
     case 'setModel': {
       if (
@@ -466,8 +484,17 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         state.prompt,
         state.run.transport,
       );
-      return { ...next, request: { model: action.model } };
+      return { ...next, request: { ...state.request, model: action.model } };
     }
+    case 'setScoreThreshold':
+      if (
+        state.run.status === 'streaming' ||
+        (action.value !== null && !isScoreThreshold(action.value)) ||
+        action.value === state.request.scoreThreshold
+      ) {
+        return state;
+      }
+      return { ...state, request: { ...state.request, scoreThreshold: action.value } };
     case 'setTheme':
       return { ...state, view: { ...state.view, theme: action.theme } };
     case 'mediaUploadStart':
