@@ -66,6 +66,8 @@ export interface StageProps {
   readonly media: MediaState;
   readonly snapshot: SegmentationSnapshot | SegmentationResult | null;
   readonly hiddenObjectIds: readonly string[];
+  /** The noun phrase of the current run, drawn before each box's confidence. */
+  readonly boxLabel: string | null;
   readonly showOverlay: boolean;
   readonly showMasks: boolean;
   readonly showBoxes: boolean;
@@ -107,6 +109,7 @@ const VIDEO_ERROR = 'The selected video could not be opened.';
  * cache budget covers a handful of frames rather than the whole timeline.
  */
 const RENDERER_OPTIONS = {
+  boxLabels: true,
   maxRecords: 200_000,
   maxMasks: 65_536,
   maxBoxes: 131_072,
@@ -235,6 +238,7 @@ function ImageStage({
   media,
   snapshot,
   hiddenObjectIds,
+  boxLabel,
   showOverlay,
   showMasks,
   showBoxes,
@@ -382,6 +386,7 @@ function ImageStage({
               source: { x: 0, y: 0, width: sourceWidth, height: sourceHeight },
               target,
               hiddenIds: hiddenObjectIds,
+              ...(boxLabel === null ? {} : { boxLabel }),
             });
           } finally {
             context.restore();
@@ -404,6 +409,7 @@ function ImageStage({
       cancelled = true;
     };
   }, [
+    boxLabel,
     hiddenKey,
     hiddenObjectIds,
     image,
@@ -458,6 +464,7 @@ function VideoStage({
   media,
   snapshot,
   hiddenObjectIds,
+  boxLabel,
   showOverlay,
   showMasks,
   showBoxes,
@@ -682,6 +689,7 @@ function VideoStage({
             src={source}
             renderer={rendererHandle.renderer}
             hiddenIds={hiddenObjectIds}
+            {...(boxLabel === null ? {} : { boxLabel })}
             loop={loop}
             muted={muted}
             playbackRate={Number(rate)}

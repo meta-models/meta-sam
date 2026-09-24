@@ -76,6 +76,11 @@ export interface RunState {
   readonly status: RunStatus;
   readonly transport: TransportMode;
   readonly message: string | null;
+  /**
+   * The noun phrase the current run segmented, captured when it starts so that
+   * editing the prompt afterwards does not relabel its results.
+   */
+  readonly prompt: string | null;
 }
 
 export interface RendererState {
@@ -244,6 +249,7 @@ export function createInitialState(settings: InitialSettings = {}): AppState {
       status: readyStatus(media, prompt),
       transport: settings.fixture !== undefined ? 'fixture' : 'live',
       message: null,
+      prompt: null,
     },
     renderer: {
       attempt: 0,
@@ -379,6 +385,7 @@ function clearDerivedState(
       status: readyStatus(media, prompt),
       transport,
       message: null,
+      prompt: null,
     },
     renderer: initializingRenderer(state.renderer),
     segmentation: { snapshot: null, pendingResult: null },
@@ -556,6 +563,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           runId: action.runId,
           status: 'streaming',
           message: null,
+          prompt: state.prompt.text.trim(),
         },
         renderer: initializingRenderer(state.renderer),
         segmentation: { snapshot: null, pendingResult: null },

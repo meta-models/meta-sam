@@ -1,0 +1,50 @@
+{
+  "id": "confidence",
+  "mediaMode": "image",
+  "title": "Confidence",
+  "description": "One object with the optional c confidence on its box and mask, and one object without c.",
+  "prompt": "bench objects",
+  "media": {
+    "url": "/media/synthetic-bench.svg",
+    "width": 96,
+    "height": 64
+  },
+  "events": [
+    {
+      "delayMs": 140,
+      "event": {
+        "type": "response.output_text.delta",
+        "item_id": "message-confidence",
+        "output_index": 0,
+        "content_index": 0,
+        "delta": "<0f>0<|box;x1=4;y1=4;x2=11;y2=11;w=96;h=64;c=0.9131|><|mask;x=0;y=0;c=0.9131;data=8,8,!!!!!'y:Duu@D|>\n"
+      }
+    },
+    {
+      "delayMs": 180,
+      "event": {
+        "type": "response.output_text.delta",
+        "item_id": "message-confidence",
+        "output_index": 0,
+        "content_index": 0,
+        "delta": "<0f>1<|box;x1=24;y1=16;x2=71;y2=47;w=96;h=64|><|mask;x=0;y=0;data=32,48,!!!!!(y:SktC`w|>\n"
+      }
+    },
+    {
+      "delayMs": 90,
+      "event": {
+        "type": "response.output_text.done",
+        "item_id": "message-confidence",
+        "output_index": 0,
+        "content_index": 0,
+        "text": "<0f>0<|box;x1=4;y1=4;x2=11;y2=11;w=96;h=64;c=0.9131|><|mask;x=0;y=0;c=0.9131;data=8,8,!!!!!'y:Duu@D|>\n<0f>1<|box;x1=24;y1=16;x2=71;y2=47;w=96;h=64|><|mask;x=0;y=0;data=32,48,!!!!!(y:SktC`w|>\n"
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "response.completed"
+      }
+    }
+  ]
+}

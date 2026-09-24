@@ -1025,6 +1025,7 @@ export function App(): React.JSX.Element {
       media={state.media}
       snapshot={snapshot}
       hiddenObjectIds={state.view.hiddenObjectIds}
+      boxLabel={state.run.prompt}
       showOverlay={state.view.showOverlay}
       showMasks={state.view.showMasks}
       showBoxes={state.view.showBoxes}

@@ -15,6 +15,7 @@ describe('replay scenarios', () => {
   it('keeps deterministic defaults and declared ordering per media mode', () => {
     expect(replayScenariosFor('image').map((scenario) => scenario.id)).toEqual([
       'two-objects',
+      'confidence',
       'fragmented-diagnostic',
       'incomplete',
       'refusal',

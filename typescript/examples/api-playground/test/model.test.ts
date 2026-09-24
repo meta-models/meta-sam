@@ -175,6 +175,27 @@ describe('app reducer', () => {
     expect(rerun.media.upload.fileId).toBe('file-abc');
   });
 
+  it('keeps the noun phrase a run started with for its labels', () => {
+    let state = createInitialState({ example: bedroom });
+    expect(state.run.prompt).toBeNull();
+    state = appReducer(state, { type: 'setPrompt', text: '  blanket  ' });
+    state = appReducer(state, { type: 'runStart', runId: 1 });
+    expect(state.run.prompt).toBe('blanket');
+    // The prompt field is locked while a run streams; edits apply after it ends.
+    state = appReducer(state, { type: 'setPrompt', text: 'ignored' });
+    expect(state.prompt.text).toBe('  blanket  ');
+    state = appReducer(state, {
+      type: 'runTerminal',
+      runId: 1,
+      status: 'cancelled',
+      message: 'cancelled',
+    });
+    state = appReducer(state, { type: 'setPrompt', text: 'pillow' });
+    expect(state.run.prompt).toBe('blanket');
+    state = appReducer(state, { type: 'runStart', runId: 2 });
+    expect(state.run.prompt).toBe('pillow');
+  });
+
   it('clears the upload when the media changes and fences stale completions', () => {
     let state = createInitialState({ example: bedroom });
     state = appReducer(state, { type: 'mediaUploadStart', generation: 0 });

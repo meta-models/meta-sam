@@ -407,6 +407,92 @@ test.describe('image replay fixtures', () => {
     await expect(page.getByText(/parser diagnostic/)).toBeVisible();
   });
 
+  test('shows optional confidence in the legend and records only when present', async ({
+    page,
+  }) => {
+    await openFixture(page, 'confidence');
+    await runReplay(page, 'completed');
+    const legend = page.getByRole('list', { name: 'Object legend' });
+    const rows = legend.getByRole('listitem');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toContainText('Object 0');
+    await expect(rows.nth(0)).toContainText('confidence 0.913 · 1 mask · 1 box');
+    await expect(rows.nth(1)).toContainText('Object 1');
+    await expect(rows.nth(1)).toContainText('1 mask · 1 box');
+    await expect(rows.nth(1)).not.toContainText('confidence');
+
+    await page.getByRole('tab', { name: /Records/ }).click();
+    const records = page.getByRole('list', { name: 'Output records' }).locator('li');
+    await expect(records).toHaveCount(4);
+    await expect(records.nth(0)).toContainText('0 · box (4, 4) → (12, 12) · c 0.913');
+    await expect(records.nth(1)).toContainText(
+      '0 · mask 8×8 · one_bit · rev 1 · c 0.913',
+    );
+    await expect(records.nth(2)).not.toContainText(' · c ');
+    await expect(records.nth(3)).not.toContainText(' · c ');
+
+    // Each box gets a canvas label at its top-left corner in its object color:
+    // "bench objects 0 (0.913)" for object 0 and "bench objects 1" for object 1,
+    // which has no confidence. Sampling the label's top fill row at a width
+    // between the two texts tells the long label from the short one.
+    const labels = await page.getByTestId('media-canvas').evaluate(
+      (element: HTMLCanvasElement, swatches) => {
+        const context = element.getContext('2d');
+        if (context === null) throw new Error('Canvas context unavailable.');
+        const measure = document.createElement('canvas').getContext('2d')!;
+        measure.font =
+          '600 11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+        const short = measure.measureText('bench objects 1').width + 8;
+        const long = measure.measureText('bench objects 0 (0.913)').width + 8;
+        const between = (short + long) / 2;
+        const dpr = element.width / element.getBoundingClientRect().width;
+        const cssWidth = element.width / dpr;
+        const cssHeight = element.height / dpr;
+        const scale = Math.min(cssWidth / 96, cssHeight / 64);
+        const target = {
+          x: (cssWidth - 96 * scale) / 2,
+          y: (cssHeight - 64 * scale) / 2,
+        };
+        const sample = (left: number, top: number, dx: number, dy: number) => {
+          const boxLeft = target.x + left * scale;
+          const boxTop = target.y + top * scale;
+          const labelTop = boxTop - 16 >= target.y ? boxTop - 16 : boxTop;
+          const pixel = context.getImageData(
+            Math.round((boxLeft + dx) * dpr),
+            Math.round((labelTop + dy) * dpr),
+            1,
+            1,
+          ).data;
+          return [pixel[0]!, pixel[1]!, pixel[2]!];
+        };
+        return {
+          first: sample(4, 4, 1.5, 8),
+          firstWide: sample(4, 4, between, 1),
+          second: sample(24, 16, 1.5, 8),
+          secondWide: sample(24, 16, between, 1),
+          swatches,
+        };
+      },
+      await page
+        .getByRole('list', { name: 'Output records' })
+        .locator('.legend__swatch')
+        .evaluateAll((swatches) =>
+          swatches.map((swatch) =>
+            getComputedStyle(swatch)
+              .backgroundColor.match(/\d+/g)!
+              .slice(0, 3)
+              .map(Number),
+          ),
+        ),
+    );
+    const distance = (a: number[], b: number[]) =>
+      a.reduce((sum, channel, index) => sum + Math.abs(channel - (b[index] ?? 0)), 0);
+    expect(distance(labels.first, labels.swatches[0]!)).toBeLessThan(12);
+    expect(distance(labels.firstWide, labels.swatches[0]!)).toBeLessThan(12);
+    expect(distance(labels.second, labels.swatches[2]!)).toBeLessThan(12);
+    expect(distance(labels.secondWide, labels.swatches[2]!)).toBeGreaterThan(60);
+  });
+
   test.describe('terminal outcomes', () => {
     for (const [fixture, status] of [
       ['incomplete', 'incomplete'],
