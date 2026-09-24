@@ -11,7 +11,12 @@ export {
   SegmentationResourceLimitError,
   UnsupportedMaskEncodingError,
 } from './errors.js';
-export { SegmentationRenderer, objectColor } from './renderer.js';
+export {
+  SegmentationRenderer,
+  formatBoxLabel,
+  formatConfidence,
+  objectColor,
+} from './renderer.js';
 export type {
   ImageRenderOptions,
   MaskOutlineOptions,

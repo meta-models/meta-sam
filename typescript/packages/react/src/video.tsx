@@ -67,6 +67,8 @@ export interface VideoProps extends MediaPlayerCallbacks {
   readonly result?: VideoSegmentationResult | VideoSegmentationSnapshot;
   readonly renderer?: SegmentationRenderer;
   readonly hiddenIds?: ReadonlySet<string> | readonly string[];
+  /** Text shown before the object ID in box labels when the renderer draws them. */
+  readonly boxLabel?: string;
   readonly objectFit?: VideoFrameFit;
   readonly devicePixelRatio?: number | (() => number);
   readonly loop?: boolean;
@@ -156,6 +158,7 @@ export const Video = forwardRef<VideoRef, VideoProps>(function Video(props, ref)
     result,
     renderer: suppliedRenderer,
     hiddenIds,
+    boxLabel,
     objectFit,
     devicePixelRatio,
     loop,
@@ -201,6 +204,7 @@ export const Video = forwardRef<VideoRef, VideoProps>(function Video(props, ref)
       ...(current.objectFit === undefined ? {} : { fit: current.objectFit }),
       devicePixelRatio: () => resolvePixelRatio(current.devicePixelRatio),
       ...(current.hiddenIds === undefined ? {} : { hiddenIds: current.hiddenIds }),
+      ...(current.boxLabel === undefined ? {} : { boxLabel: current.boxLabel }),
     });
   }, []);
 
@@ -280,7 +284,7 @@ export const Video = forwardRef<VideoRef, VideoProps>(function Video(props, ref)
     void player.forceRender().catch((error: unknown) => {
       if (!isExpectedRenderMiss(error)) reportError(error);
     });
-  }, [devicePixelRatio, hiddenIds, objectFit, playerRef, reportError]);
+  }, [boxLabel, devicePixelRatio, hiddenIds, objectFit, playerRef, reportError]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
