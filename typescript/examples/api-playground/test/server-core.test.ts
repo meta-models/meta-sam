@@ -654,6 +654,67 @@ describe('live server boundary', () => {
     ).toMatchObject({ kind: 'image', media: { mimeType: 'image/png' } });
   });
 
+  it('sends object prompts as the input text and never together with a phrase', () => {
+    const boundary = 'boundary-test';
+    const tokens =
+      '<0f>5<|box;x1=444;y1=626;x2=675;y2=849;w=1920;h=1080|>-<|point;x=560;y=738;w=1920;h=1080|>';
+    const fields = parseMultipartBody(
+      multipart([
+        { name: 'object_prompt', data: tokens },
+        { name: 'media', filename: 'a.png', data: mediaBytes['image/png'] },
+      ]),
+      boundary,
+    );
+    expect(validateMediaInput(fields)).toMatchObject({ kind: 'image', prompt: tokens });
+    expect(
+      validateMediaInput({
+        object_prompt: `<12f>1<|point;x=1;y=2;w=10;h=10|>`,
+        file_id: 'file-abc123',
+      }),
+    ).toEqual({
+      prompt: '<12f>1<|point;x=1;y=2;w=10;h=10|>',
+      kind: 'video',
+      fileId: 'file-abc123',
+    });
+
+    const expectCode = (fields: MultipartFields, code: string): void => {
+      let caught: unknown;
+      try {
+        validateMediaInput(fields);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ code });
+    };
+    expectCode(
+      { prompt: 'wheel', object_prompt: tokens, file_id: 'file-abc123' },
+      'invalid_request',
+    );
+    expect(
+      validateMediaInput({
+        object_prompt: `${tokens}<120f>5<|point;x=1;y=2;w=1920;h=1080|>,6<|point;x=3;y=4;w=1920;h=1080|>`,
+        file_id: 'file-abc123',
+      }),
+    ).toMatchObject({ kind: 'video' });
+    for (const text of [
+      'wheel',
+      '<0f>5',
+      '<0f>5<|mask;x=0;y=0|>',
+      `${tokens}\nextra`,
+    ]) {
+      expectCode(
+        { object_prompt: text, file_id: 'file-abc123' },
+        'invalid_object_prompt',
+      );
+    }
+    expect(() =>
+      parseMultipartBody(
+        multipart([{ name: 'object_prompt', data: 'x'.repeat(32_769) }]),
+        boundary,
+      ),
+    ).toThrow(/object_prompt field is invalid/);
+  });
+
   it('accepts include_confidence as exactly true or false for image and video', () => {
     const boundary = 'boundary-test';
     const image = parseMultipartBody(

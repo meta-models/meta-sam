@@ -761,6 +761,196 @@ test.describe('live relay', () => {
     );
   });
 
+  test('builds object prompts from a drawn box and clicks and sends them instead of a phrase', async ({
+    page,
+  }) => {
+    let body: string | null = null;
+    await mockLive(page, (request) => {
+      body = request.postData();
+    });
+    await page.goto('/?example=truck');
+    await expect(page.getByText(/configured-model via sam.example.test/)).toBeVisible();
+    await page.getByRole('radio', { name: 'Box & points' }).click();
+    const overlay = page.getByTestId('prompt-overlay');
+    await expect(overlay).toBeVisible();
+    const segment = page.getByRole('button', { name: 'Segment', exact: true });
+    await expect(segment).toBeDisabled();
+
+    const toScreen = (x: number, y: number) =>
+      overlay.evaluate(
+        (svg, [sx, sy]) => {
+          const point = new DOMPoint(sx! + 0.5, sy! + 0.5).matrixTransform(
+            (svg as SVGSVGElement).getScreenCTM()!,
+          );
+          return { x: point.x, y: point.y };
+        },
+        [x, y],
+      );
+    const start = await toScreen(444, 626);
+    const end = await toScreen(675, 849);
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y, { steps: 8 });
+    await page.mouse.up();
+    await expect(page.getByTestId('prompt-box')).toHaveCount(1);
+    const promptText = page.getByRole('textbox', { name: 'Prompt text' });
+    await expect(promptText).toHaveValue(
+      /^<0f>1<\|box;x1=44\d;y1=62\d;x2=67\d;y2=8[45]\d;w=1800;h=1200\|>$/,
+    );
+
+    // A plain click adds a positive point; Option-click and right-click add a negative one.
+    const inside = await toScreen(560, 738);
+    await page.keyboard.down('Alt');
+    await page.mouse.click(inside.x, inside.y);
+    await page.keyboard.up('Alt');
+    await expect(page.getByTestId('prompt-negative')).toHaveCount(1);
+    await expect(promptText).toHaveValue(
+      /\|>-<\|point;x=5\d\d;y=7\d\d;w=1800;h=1200\|>$/,
+    );
+
+    // With "Negative point" chosen, a drag still redraws the box instead of
+    // adding a point, and a plain click adds a negative point.
+    await page.getByRole('radio', { name: 'Negative point' }).click();
+    const redrawStart = await toScreen(440, 620);
+    const redrawEnd = await toScreen(680, 852);
+    await page.mouse.move(redrawStart.x, redrawStart.y);
+    await page.mouse.down();
+    await page.mouse.move(redrawEnd.x, redrawEnd.y, { steps: 8 });
+    await page.mouse.up();
+    await expect(page.getByTestId('prompt-box')).toHaveCount(1);
+    await expect(page.getByTestId('prompt-negative')).toHaveCount(1);
+    await expect(promptText).toHaveValue(/^<0f>1<\|box;x1=44\d;y1=6[12]\d;x2=6[78]\d;/);
+
+    await page.getByRole('button', { name: 'New object' }).click();
+    await expect(page.getByRole('radio', { name: 'Positive point' })).toBeChecked();
+    const body2 = await toScreen(1100, 420);
+    await page.mouse.click(body2.x, body2.y);
+    const hub2 = await toScreen(1510, 667);
+    await page.mouse.click(hub2.x, hub2.y, { button: 'right' });
+    await expect(page.getByTestId('prompt-positive')).toHaveCount(1);
+    await expect(page.getByTestId('prompt-negative')).toHaveCount(2);
+    await expect(promptText).toHaveValue(
+      /,2<\|point;x=11\d\d;y=4\d\d;w=1800;h=1200\|>-<\|point;x=15\d\d;y=6\d\d;w=1800;h=1200\|>$/,
+    );
+    await expect(
+      page.getByRole('list', { name: 'Prompted objects' }).getByRole('listitem'),
+    ).toHaveText([/Object 1\s*box · 1 negative/, /Object 2\s*1 positive · 1 negative/]);
+    const tokens = await promptText.inputValue();
+
+    await page.getByRole('button', { name: 'Code', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Request code' });
+    await expect(dialog.getByTestId('code-example')).toContainText(tokens);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+
+    await expect(segment).toBeEnabled();
+    await segment.click();
+    await expect(page.getByTestId('run-status')).toContainText('completed');
+    expect(body).toContain(`name="object_prompt"\r\n\r\n${tokens}\r\n`);
+    expect(body).not.toContain('name="prompt"');
+
+    await page.getByRole('button', { name: 'Clear prompts' }).click();
+    await expect(page.getByTestId('prompt-box')).toHaveCount(0);
+    await expect(segment).toBeDisabled();
+    await page.getByRole('radio', { name: 'Text' }).click();
+    await expect(page.getByRole('textbox', { name: 'Noun phrase' })).toHaveValue(
+      'wheel',
+    );
+    await expect(overlay).toHaveCount(0);
+
+    await page.goto('/?fixture=two-objects');
+    await expect(page.getByRole('radio', { name: 'Box & points' })).toHaveCount(0);
+  });
+
+  test('prompts video objects on several frames and sends one block per frame', async ({
+    page,
+  }) => {
+    let body: string | null = null;
+    await mockLive(page, (request) => {
+      body = request.postData();
+    });
+    await page.goto('/?example=bedroom');
+    await expect(page.getByTestId('video-frame-count')).toContainText('frame 0 / 199', {
+      timeout: 30_000,
+    });
+    await page.getByRole('radio', { name: 'Box & points' }).click();
+    const overlay = page.getByTestId('prompt-overlay');
+    await expect(overlay).toBeVisible();
+    const slider = page.getByTestId('frame-slider').getByRole('slider');
+    const goToFrame = async (frame: number) => {
+      await slider.focus();
+      await slider.press('Home');
+      for (let step = 0; step < frame; step += 1) await slider.press('ArrowRight');
+      await expect(page.getByTestId('video-frame-count')).toContainText(
+        `frame ${frame} /`,
+      );
+    };
+    const drag = async (a: [number, number], b: [number, number]) => {
+      const [start, end] = await overlay.evaluate(
+        (svg, points) =>
+          points.map(([x, y]) => {
+            const point = new DOMPoint(x! + 0.5, y! + 0.5).matrixTransform(
+              (svg as SVGSVGElement).getScreenCTM()!,
+            );
+            return { x: point.x, y: point.y };
+          }),
+        [a, b],
+      );
+      await page.mouse.move(start!.x, start!.y);
+      await page.mouse.down();
+      await page.mouse.move(end!.x, end!.y, { steps: 8 });
+      await page.mouse.up();
+    };
+    const promptText = page.getByRole('textbox', { name: 'Prompt text' });
+
+    await goToFrame(30);
+    await drag([510, 301], [659, 428]);
+    await expect(promptText).toHaveValue(/^<30f>1<\|box;[^|]*w=960;h=540\|>$/);
+
+    // The same object on a later frame, then a new object there.
+    await goToFrame(40);
+    await expect(page.getByTestId('prompt-box')).toHaveCount(0);
+    await drag([492, 319], [640, 444]);
+    await page.getByRole('button', { name: 'New object' }).click();
+    await drag([355, 329], [481, 417]);
+    await expect(page.getByTestId('prompt-box')).toHaveCount(2);
+    await expect(promptText).toHaveValue(
+      /^<30f>1<\|box;[^|]*\|><40f>1<\|box;[^|]*\|>,2<\|box;[^|]*\|>$/,
+    );
+    await expect(
+      page.getByRole('list', { name: 'Prompted objects' }).getByRole('listitem'),
+    ).toHaveText([
+      /Object 1\s*frame 30: box; frame 40: box/,
+      /Object 2\s*frame 40: box/,
+    ]);
+
+    // The frame list jumps back, and only that frame's prompts are drawn.
+    const frames = page.getByTestId('prompt-frames');
+    await expect(frames.getByRole('button')).toHaveText(['Frame 30', 'Frame 40']);
+    await frames.getByRole('button', { name: 'Frame 30' }).click();
+    await expect(page.getByTestId('video-frame-count')).toContainText('frame 30 /');
+    await expect(page.getByTestId('prompt-box')).toHaveCount(1);
+
+    const tokens = await promptText.inputValue();
+    await expect(page.getByTestId('upload-status')).toContainText('video ready', {
+      timeout: 30_000,
+    });
+    const segment = page.getByRole('button', { name: 'Segment', exact: true });
+    await expect(segment).toBeEnabled({ timeout: 30_000 });
+    await segment.click();
+    await expect(page.getByTestId('run-status')).toContainText(/completed|incomplete/, {
+      timeout: 30_000,
+    });
+    expect(body).toContain(`name="object_prompt"\r\n\r\n${tokens}\r\n`);
+
+    // Clearing a frame keeps the other frames' prompts.
+    await frames.getByRole('button', { name: 'Frame 40' }).click();
+    await expect(page.getByTestId('video-frame-count')).toContainText('frame 40 /');
+    await page.getByRole('button', { name: 'Clear frame 40' }).click();
+    await expect(promptText).toHaveValue(/^<30f>1<\|box;[^|]*\|>$/);
+    await expect(frames.getByRole('button')).toHaveText(['Frame 30']);
+  });
+
   test('uploads an example video once and reuses the handle for a second run', async ({
     page,
   }) => {

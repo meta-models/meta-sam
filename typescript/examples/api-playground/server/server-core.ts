@@ -18,6 +18,23 @@ export const MAX_FILENAME_LENGTH = 200;
 export const MAX_FILE_ID_LENGTH = 126;
 export const MAX_MODEL_ID_LENGTH = 120;
 export const MAX_SCORE_THRESHOLD_LENGTH = 32;
+/**
+ * Object prompts name objects with boxes and points on one or more frames, so
+ * they outgrow a noun phrase. They are plain ASCII tokens; see
+ * `OBJECT_PROMPT_PATTERN`.
+ */
+export const MAX_OBJECT_PROMPT_LENGTH = 32_768;
+const PROMPT_TOKEN = String.raw`-?<\|(?:box|point)(?:;[a-z][a-z0-9]?=[0-9]{1,6})+\|>`;
+const PROMPT_SEGMENT = String.raw`[0-9]{1,6}(?:${PROMPT_TOKEN}){1,40}`;
+const PROMPT_FRAME = String.raw`<[0-9]{1,6}f>${PROMPT_SEGMENT}(?:,${PROMPT_SEGMENT}){0,15}`;
+/**
+ * The relay's structural check: one or more frame blocks, each a source frame
+ * marker followed by at most 16 comma-separated objects, each an id with box and
+ * point tokens. The API validates everything else.
+ */
+export const OBJECT_PROMPT_PATTERN = new RegExp(
+  String.raw`^(?:${PROMPT_FRAME}){1,256}$`,
+);
 /** `include_confidence` is exactly `true` or `false`. */
 const MAX_INCLUDE_CONFIDENCE_LENGTH = 5;
 /** A plain decimal: digits with an optional fraction, or a fraction alone. */
@@ -33,6 +50,7 @@ const responsesFields = new Set([
   'file_id',
   'score_threshold',
   'include_confidence',
+  'object_prompt',
 ]);
 const MODEL_CACHE_TTL = 5 * 60 * 1_000;
 const MAX_STREAM_SIZE = 64 * 1024 * 1024;
@@ -66,11 +84,17 @@ export type MultipartFields = {
   file_id?: string;
   score_threshold?: string;
   include_confidence?: string;
+  object_prompt?: string;
   media?: MultipartMedia;
 };
 
 type MultipartTextField =
-  'prompt' | 'model' | 'file_id' | 'score_threshold' | 'include_confidence';
+  | 'prompt'
+  | 'model'
+  | 'file_id'
+  | 'score_threshold'
+  | 'include_confidence'
+  | 'object_prompt';
 
 export type ValidatedMedia = Readonly<
   | {
@@ -449,8 +473,36 @@ export function validateUploadInput(fields: MultipartFields): Readonly<{
  * their bytes inline; video carries the opaque handle returned by `/api/files`
  * and never the bytes.
  */
+function validateObjectPrompt(value: unknown): string {
+  const prompt = typeof value === 'string' ? value.trim() : '';
+  if (prompt.length > MAX_OBJECT_PROMPT_LENGTH || !OBJECT_PROMPT_PATTERN.test(prompt)) {
+    throw new HttpError(
+      400,
+      'invalid_object_prompt',
+      'The object prompt must be a frame marker followed by object ids with box and point tokens.',
+    );
+  }
+  return prompt;
+}
+
+/**
+ * The text sent as `input_text`: a noun phrase, or object prompts that name
+ * the object with boxes and clicks. A request carries exactly one of them.
+ */
+function validateRequestText(fields: MultipartFields): string {
+  if (fields.object_prompt === undefined) return validatePrompt(fields.prompt);
+  if (fields.prompt !== undefined) {
+    throw new HttpError(
+      400,
+      'invalid_request',
+      'Send either a noun phrase or object prompts, not both.',
+    );
+  }
+  return validateObjectPrompt(fields.object_prompt);
+}
+
 export function validateMediaInput(fields: MultipartFields): RelayInput {
-  const prompt = validatePrompt(fields.prompt);
+  const prompt = validateRequestText(fields);
   const model = validateOptionalModel(fields.model);
   const scoreThreshold = validateOptionalScoreThreshold(fields.score_threshold);
   const includeConfidence = validateOptionalIncludeConfidence(
@@ -667,6 +719,7 @@ export function parseMultipartBody(
         file_id: 'invalid_file_id',
         score_threshold: 'invalid_score_threshold',
         include_confidence: 'invalid_include_confidence',
+        object_prompt: 'invalid_object_prompt',
       }[name];
       const limit = {
         prompt: 4 * MAX_PROMPT_LENGTH,
@@ -674,6 +727,7 @@ export function parseMultipartBody(
         file_id: MAX_FILE_ID_LENGTH,
         score_threshold: MAX_SCORE_THRESHOLD_LENGTH,
         include_confidence: MAX_INCLUDE_CONFIDENCE_LENGTH,
+        object_prompt: MAX_OBJECT_PROMPT_LENGTH,
       }[name];
       if (part.filename !== undefined || data.length > limit) {
         throw new HttpError(400, code, `The ${part.name} field is invalid.`);

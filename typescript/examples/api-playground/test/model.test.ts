@@ -238,6 +238,50 @@ describe('app reducer', () => {
     expect(state.request.includeConfidence).toBe(false);
   });
 
+  it('keeps object prompts with their media and runs them without a noun phrase', () => {
+    const box = { x1: 10, y1: 20, x2: 40, y2: 60 };
+    let state = createInitialState({ example: truck });
+    expect(state.objectPrompts.mode).toBe('text');
+    state = appReducer(state, { type: 'setPromptMode', mode: 'objects' });
+    state = appReducer(state, { type: 'placePromptBox', frameIndex: 0, box });
+    expect(state.objectPrompts.objects).toEqual([
+      { id: 1, frames: [{ frameIndex: 0, box, points: [] }] },
+    ]);
+    const started = appReducer(state, { type: 'runStart', runId: 1 });
+    expect(started.run.prompt).toBeNull();
+    expect(
+      appReducer(started, {
+        type: 'placePromptBox',
+        frameIndex: 0,
+        box: { ...box, x1: 0 },
+      }),
+    ).toBe(started);
+    expect(appReducer(started, { type: 'clearPromptObjects' })).toBe(started);
+
+    const resized = appReducer(state, {
+      type: 'mediaMetadata',
+      runId: state.run.runId,
+      width: state.media.sourceWidth + 10,
+      height: state.media.sourceHeight,
+    });
+    expect(resized.objectPrompts.objects).toEqual([]);
+    expect(resized.objectPrompts.mode).toBe('objects');
+
+    const restaged = appReducer(state, {
+      type: 'stageExample',
+      runId: 5,
+      example: bedroom,
+    });
+    expect(restaged.objectPrompts).toMatchObject({ mode: 'objects', objects: [] });
+    const replay = appReducer(state, {
+      type: 'stageFixture',
+      runId: 6,
+      fixture: getReplayScenario('two-objects'),
+    });
+    expect(replay.objectPrompts).toMatchObject({ mode: 'text', objects: [] });
+    expect(appReducer(replay, { type: 'setPromptMode', mode: 'objects' })).toBe(replay);
+  });
+
   it('keeps the noun phrase a run started with for its labels', () => {
     let state = createInitialState({ example: bedroom });
     expect(state.run.prompt).toBeNull();

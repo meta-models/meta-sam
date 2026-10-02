@@ -5,6 +5,13 @@
 import type { SegmentationResult, SegmentationSnapshot } from '@meta-sam/parser';
 
 import type { MediaExample } from './examples';
+import {
+  clearedObjectPrompts,
+  initialObjectPrompts,
+  reduceObjectPrompts,
+  type ObjectPromptAction,
+  type ObjectPromptState,
+} from './object-prompts';
 import type { ReplayScenario } from './scenarios';
 
 export type MediaKind = 'image' | 'video';
@@ -143,6 +150,8 @@ export interface AppState {
   readonly segmentation: SegmentationState;
   readonly stream: StreamState;
   readonly view: ViewState;
+  /** Box and click prompts that name the object instead of a noun phrase. */
+  readonly objectPrompts: ObjectPromptState;
 }
 
 export interface InitialSettings {
@@ -292,6 +301,7 @@ export function createInitialState(settings: InitialSettings = {}): AppState {
       hiddenObjectIds: [],
       inspectorTab: settings.inspectorTab ?? 'objects',
     },
+    objectPrompts: initialObjectPrompts,
   };
 }
 
@@ -342,6 +352,7 @@ export type AppAction =
     }
   | { readonly type: 'uploadError'; readonly runId: number; readonly message: string }
   | { readonly type: 'runStart'; readonly runId: number }
+  | ObjectPromptAction
   | {
       readonly type: 'streamEntry';
       readonly runId: number;
@@ -417,6 +428,12 @@ function clearDerivedState(
     segmentation: { snapshot: null, pendingResult: null },
     stream: emptyStream,
     view: { ...state.view, hiddenObjectIds: [] },
+    // Prompt coordinates belong to the media they were drawn on, and replays
+    // only accept their recorded phrase.
+    objectPrompts:
+      transport === 'fixture'
+        ? { ...clearedObjectPrompts(state.objectPrompts), mode: 'text' }
+        : clearedObjectPrompts(state.objectPrompts),
   };
 }
 
@@ -575,17 +592,25 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
       return clearDerivedState(state, action.runId, media, state.prompt, 'live');
     }
-    case 'mediaMetadata':
-      return action.runId === state.run.runId && action.width > 0 && action.height > 0
-        ? {
-            ...state,
-            media: {
-              ...state.media,
-              sourceWidth: action.width,
-              sourceHeight: action.height,
-            },
-          }
-        : state;
+    case 'mediaMetadata': {
+      if (action.runId !== state.run.runId || action.width <= 0 || action.height <= 0) {
+        return state;
+      }
+      const resized =
+        action.width !== state.media.sourceWidth ||
+        action.height !== state.media.sourceHeight;
+      return {
+        ...state,
+        media: {
+          ...state.media,
+          sourceWidth: action.width,
+          sourceHeight: action.height,
+        },
+        objectPrompts: resized
+          ? clearedObjectPrompts(state.objectPrompts)
+          : state.objectPrompts,
+      };
+    }
     case 'uploadError':
       if (!acceptsNewGeneration(state, action.runId)) return state;
       return {
@@ -610,7 +635,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           runId: action.runId,
           status: 'streaming',
           message: null,
-          prompt: state.prompt.text.trim(),
+          // Object prompts have no noun phrase to label boxes with.
+          prompt:
+            state.objectPrompts.mode === 'objects' ? null : state.prompt.text.trim(),
         },
         renderer: initializingRenderer(state.renderer),
         segmentation: { snapshot: null, pendingResult: null },
@@ -770,6 +797,28 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
     case 'setInspectorTab':
       return { ...state, view: { ...state.view, inspectorTab: action.tab } };
+    case 'setPromptMode':
+    case 'setPromptTool':
+    case 'addPromptObject':
+    case 'selectPromptObject':
+    case 'removePromptObject':
+    case 'clearPromptObjects':
+    case 'clearPromptFrame':
+    case 'placePromptBox':
+    case 'placePromptPoint': {
+      if (state.run.status === 'streaming') return state;
+      if (
+        action.type === 'setPromptMode' &&
+        action.mode === 'objects' &&
+        state.run.transport !== 'live'
+      ) {
+        return state;
+      }
+      const objectPrompts = reduceObjectPrompts(state.objectPrompts, action);
+      return objectPrompts === state.objectPrompts
+        ? state
+        : { ...state, objectPrompts };
+    }
     case 'setView':
       return {
         ...state,
