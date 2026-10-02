@@ -316,4 +316,4 @@ def test_python_loader_rejects_parser_options(tmp_path: Path) -> None:
 
 @pytest.mark.conformance
 def test_all_shared_cases_execute_through_the_stream_adapter() -> None:
-    assert len(_CASES) == 40
+    assert len(_CASES) == 42

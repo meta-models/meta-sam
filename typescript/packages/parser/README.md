@@ -217,10 +217,14 @@ line per frame, with boxes and masks inline.
 - `<Nf>` is the zero-based frame index. Frames with no visible object emit no line,
   so indices can skip; read the explicit value rather than counting lines. A single
   image is emitted as frame `<0f>`.
+- Video lines need not arrive in frame order: a response may emit frames forward
+  from one frame to the last and then backward to frame 0. `records` keep output
+  order, so sort by `frameIndexOf` when you need frame order.
 - Records are comma-separated. Each is a bare integer **object id**, one box, then
   one mask. The id is stable for an object across the frames of one response and is
-  not a dense `0`-based sequence: a line may carry `0` and `2`. The parser retains
-  it as a string in `objectId` and never derives it from position.
+  not a dense `0`-based sequence: a line may carry `0` and `2`, and ids may skip
+  numbers or start above `0`. The parser retains it as a string in `objectId` and
+  never derives it from position.
 - Box and mask fields are `;`-separated `key=value` pairs. The parser reads them by
   name, so their order does not matter. It trims whitespace around keys and values
   and skips empty fields. It keeps the record when it meets a key or a token it
@@ -231,9 +235,10 @@ line per frame, with boxes and masks inline.
 - The box corners `x1`, `y1`, `x2`, `y2` and the frame size `w`, `h` are source
   pixels; `x2` and `y2` are inclusive on the wire. The parser normalizes every box to
   half-open `left`, `top`, `right = x2 + 1`, `bottom = y2 + 1`.
-- `c` is the optional detection confidence, a number from 0 through 1. The parser
-  exposes each token's value as `confidence` on its `SegmentationBoxRecord` and
-  `SegmentationMaskRecord`. When a token has no `c`, its record has no
+- `c` is the model's optional confidence for the record, a number from 0 through 1.
+  The parser exposes each token's value as `confidence` on its
+  `SegmentationBoxRecord` and `SegmentationMaskRecord`. In a video, the same object
+  can carry a different `c` on each frame. When a token has no `c`, its record has no
   `confidence`; that does not mean zero. A `c` value that is not a number from 0
   through 1 is ignored with an `ignored_confidence` warning; the box and mask are
   kept. Ask for `c` by setting the request's Responses metadata value
