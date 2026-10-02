@@ -1,6 +1,6 @@
 # SAM 3 text format
 
-This document defines the segmentation text format shared by every implementation in this repository. SAM 3.1 returns segmentation as special-token text in one Responses API `output_text` lane, one line per frame. That wire grammar is the only structured input the parsers accept; each newline commits one record set and arbitrary chunk boundaries do not affect the result.
+This document defines the segmentation text format shared by every implementation in this repository, and the object prompts a request may send in the same token vocabulary. SAM 3.1 returns segmentation as special-token text in one Responses API `output_text` lane, one line per frame. That wire grammar is the only structured input the parsers accept; each newline commits one record set and arbitrary chunk boundaries do not affect the result.
 
 ## SAM API output
 
@@ -43,6 +43,41 @@ Readers must accept records without `c` in every response, including responses t
 Every diagnostic has a severity. An `error` means the parser dropped data. A `warning` means the parser kept the record and ignored part of the input. The warning codes are `ignored_field`, `ignored_token`, and `ignored_confidence`. Each warning code is reported once per stream for each field key, token name, or `c`, on the first line where it applies. A malformed record reports no warnings, so a later accepted record reports them instead.
 
 An empty lane — zero matches — is a valid completed response with no records. Any malformed API-looking line, including a bare frame header such as `<0f>`, produces a `malformed_record` diagnostic. Any malformed object segment diagnoses the whole line. Already accepted segments remain ordered records, matching streaming parser behavior.
+
+## SAM API input
+
+A request names what to segment in its `input_text`. The text is either a noun phrase, such as `red circle`, or object prompts that name each object with a box and points. A request must not combine a noun phrase with object prompts.
+
+Object prompts use the output token vocabulary, one block per source frame:
+
+```text
+<30f>1<|box;x1=10;y1=20;x2=39;y2=59;w=640;h=480|>-<|point;x=25;y=30;w=640;h=480|><120f>1<|point;x=20;y=40;w=640;h=480|>,2<|box;x1=5;y1=5;x2=29;y2=29;w=640;h=480|>
+```
+
+- `<Nf>` opens the block for source frame `N`. The prompts after it, up to the next frame marker, apply to that frame. An image request uses frame 0 only. A video request may prompt several frames.
+- A block holds comma-separated segments. Each segment is an object id followed by one or more tokens. The same id on another frame prompts the same object again on that frame; a new id names a new object. An id appears at most once per frame. The response reports each object under the id the request gave it.
+- A `box` token names the whole object. It carries `x1`, `y1`, `x2`, and `y2` with inclusive `x2` and `y2`, as in output. An object has at most one box per frame, and a box is never negative.
+- A `point` token is one click with `x` and `y`. A point without a prefix is positive: it marks part of the object. A point preceded by `-` is negative: it marks a region that is not part of the object.
+- Every token carries `w` and `h`, which must be the media's width and height in pixels as displayed: after any rotation the file specifies, such as a photo's orientation or a video's rotation flag. These are the `w` and `h` the response reports. Coordinates are pixels in that space; they must be non-negative and inside it.
+- Mask tokens must not be sent as prompts. A model may limit how many objects one request can prompt.
+
+Clients convert coordinates to the media's pixels before sending them: subtract where the displayed media area starts in the view, multiply by the size of the media region shown divided by the size of the displayed area, and add where that region starts in the media. Without a crop, the region shown is the whole media and starts at (0, 0). Round down to whole pixels and keep each coordinate inside the media. For a click at (100, 50) on a 640x360 preview of a 1920x1080 video:
+
+```text
+x = 100 * 1920 / 640 = 300
+y = 50 * 1080 / 360 = 150
+<|point;x=300;y=150;w=1920;h=1080|>
+```
+
+For a video, the Responses metadata value `propagation_direction` selects which frames the API tracks the prompted objects over:
+
+- `both`, the default: forward from the earliest prompt frame to the last frame, then backward from the frame before it to frame 0.
+- `forward`: from the earliest prompt frame to the last frame.
+- `backward`: from the frame before the earliest prompt frame to frame 0. `backward` requires a prompt on a frame after frame 0.
+
+```json
+{ "metadata": { "propagation_direction": "forward" } }
+```
 
 ## Mask payload encoding
 

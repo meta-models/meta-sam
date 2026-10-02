@@ -3,7 +3,7 @@
     "protocol": {
       "path": "protocol/sam3.md",
       "version_status": "unversioned",
-      "sha256": "238cc9502357365b97a91993af0f23185a3f5b96813b8f321a98d75a1ca99393"
+      "sha256": "dcb98ae65b6a456ead0543b2f8be10789b988fc7fde07c670e3559f94c017c75"
     },
     "schema": {
       "path": "conformance/case.schema.json",
@@ -16,20 +16,20 @@
       "digest_algorithm": "sha256 over each sorted UTF-8 filename, NUL, raw file bytes, NUL",
       "sha256": "db5776e10283b229509d7f726d1cb4ed0c39da983e3c94b0f5d48618427d890c"
     },
-    "identity": "sha256:3c4f0a597833a024a78c78ca6a5b7ea7bbc632e2949c0fe56e9c601f2b598b28"
+    "identity": "sha256:9311a362c910aedf742f6db7a46c0870b93a01086f334241ce4513a0f99b9efc"
   },
   "implementations": [
     {
       "language": "typescript",
       "distribution": "@meta-sam/parser",
       "version": "0.0.13",
-      "contract_identity": "sha256:3c4f0a597833a024a78c78ca6a5b7ea7bbc632e2949c0fe56e9c601f2b598b28"
+      "contract_identity": "sha256:9311a362c910aedf742f6db7a46c0870b93a01086f334241ce4513a0f99b9efc"
     },
     {
       "language": "python",
       "distribution": "meta-sam-parser",
       "version": "0.0.6",
-      "contract_identity": "sha256:3c4f0a597833a024a78c78ca6a5b7ea7bbc632e2949c0fe56e9c601f2b598b28"
+      "contract_identity": "sha256:9311a362c910aedf742f6db7a46c0870b93a01086f334241ce4513a0f99b9efc"
     }
   ]
 }
