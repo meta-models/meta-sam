@@ -358,6 +358,34 @@ describe('LiveTransport', () => {
     expect(calls[0]?.body.get('prompt')).toBeNull();
   });
 
+  it('sends a tracking direction with video requests only', async () => {
+    const calls = stubFetch(
+      () =>
+        new Response('{"type":"response.completed"}\n', {
+          headers: { 'Content-Type': 'application/x-ndjson' },
+        }),
+    );
+    await drain({
+      fixtureId: null,
+      kind: 'video',
+      prompt: 'pillow',
+      model: 'sam-3.1',
+      fileId: 'file-abc123',
+      objectPrompt: '<3f>1<|point;x=1;y=2;w=10;h=10|>',
+      propagationDirection: 'forward',
+    });
+    await drain({
+      fixtureId: null,
+      kind: 'image',
+      prompt: 'wheel',
+      model: 'sam-3.1',
+      media: new Blob(['x']),
+      propagationDirection: 'forward',
+    });
+    expect(calls[0]?.body.get('propagation_direction')).toBe('forward');
+    expect(calls[1]?.body.get('propagation_direction')).toBeNull();
+  });
+
   it('asks for confidence on image and video requests only when set', async () => {
     const calls = stubFetch(
       () =>

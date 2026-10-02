@@ -74,6 +74,7 @@ import { ExampleList } from './ExampleList';
 import { Inspector } from './Inspector';
 import { ObjectPromptPanel } from './ObjectPromptPanel';
 import {
+  canTrackBackward,
   objectPromptText,
   type ObjectPromptAction,
   type PixelBox,
@@ -92,6 +93,7 @@ import {
   type AppState,
   type MediaKind,
   type MediaState,
+  type PropagationDirection,
   type RunStatus,
   type StreamEntryKind,
   type ThemeMode,
@@ -182,6 +184,7 @@ function initialState() {
       ? {}
       : { scoreThreshold: settings.scoreThreshold }),
     includeConfidence: settings.includeConfidence,
+    propagationDirection: settings.propagationDirection,
     showOverlay: settings.showOverlay,
     ...(settings.inspectorTab === null ? {} : { inspectorTab: settings.inspectorTab }),
   });
@@ -426,6 +429,13 @@ async function executeRun({
         state.objectPrompts.mode === 'objects' &&
         objectPrompt !== null
           ? { objectPrompt }
+          : {}),
+        ...(kind === 'video' &&
+        state.run.transport === 'live' &&
+        state.objectPrompts.mode === 'objects' &&
+        objectPrompt !== null &&
+        state.request.propagationDirection !== 'both'
+          ? { propagationDirection: state.request.propagationDirection }
           : {}),
       };
       const events = tap(transport.stream(request, controller.signal));
@@ -819,12 +829,20 @@ export function App(): React.JSX.Element {
   );
 
   const uploadStatus = state.media.upload.status;
+  // Backward tracking requires a prompt on a frame after frame 0.
+  const usesDirection = usesObjectPrompts && isLiveVideo;
+  const backwardAvailable = canTrackBackward(state.objectPrompts);
+  const directionReady =
+    !usesDirection ||
+    state.request.propagationDirection !== 'backward' ||
+    backwardAvailable;
   const canRun =
     !isRunning &&
     !isSelecting &&
     state.media.kind !== null &&
     state.media.sourceUrl !== null &&
     promptReady &&
+    directionReady &&
     state.renderer.status === 'ready' &&
     (state.run.transport === 'fixture'
       ? fixture !== undefined
@@ -849,6 +867,10 @@ export function App(): React.JSX.Element {
       fileId: state.media.upload.fileId,
       scoreThreshold: isLiveImage ? state.request.scoreThreshold : null,
       includeConfidence: isLiveMedia ? state.request.includeConfidence : null,
+      propagationDirection:
+        usesDirection && state.request.propagationDirection !== 'both'
+          ? state.request.propagationDirection
+          : null,
     });
   }, [
     currentModel,
@@ -861,7 +883,9 @@ export function App(): React.JSX.Element {
     usesObjectPrompts,
     objectPrompt,
     state.request.includeConfidence,
+    state.request.propagationDirection,
     state.request.scoreThreshold,
+    usesDirection,
   ]);
 
   const run = () => {
@@ -1073,6 +1097,39 @@ export function App(): React.JSX.Element {
             }}
           />
         )}
+        {usesDirection ? (
+          <VStack gap={1}>
+            <SegmentedControl
+              label="Tracking"
+              size="sm"
+              value={state.request.propagationDirection}
+              isDisabled={isRunning}
+              onChange={(value) =>
+                dispatch({
+                  type: 'setPropagationDirection',
+                  value: value as PropagationDirection,
+                })
+              }
+            >
+              <SegmentedControlItem value="both" label="Both" />
+              <SegmentedControlItem value="forward" label="Forward" />
+              <SegmentedControlItem
+                value="backward"
+                label="Backward"
+                isDisabled={!backwardAvailable}
+              />
+            </SegmentedControl>
+            <Text type="supporting" color="secondary" data-testid="tracking-hint">
+              {state.request.propagationDirection === 'backward' && !backwardAvailable
+                ? 'Backward tracking requires a prompt on a frame after frame 0.'
+                : state.request.propagationDirection === 'forward'
+                  ? 'Tracks from the earliest prompt frame to the last frame.'
+                  : state.request.propagationDirection === 'backward'
+                    ? 'Tracks from the frame before the earliest prompt frame back to frame 0.'
+                    : 'Tracks forward from the earliest prompt frame, then backward to frame 0.'}
+            </Text>
+          </VStack>
+        ) : null}
         {isLiveMedia ? (
           <Switch
             label="Include confidence"

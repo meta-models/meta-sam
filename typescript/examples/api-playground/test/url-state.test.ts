@@ -91,6 +91,7 @@ describe('safe URL state', () => {
       model: null,
       scoreThreshold: null,
       includeConfidence: true,
+      propagationDirection: 'both',
       showOverlay: false,
       inspectorTab: null,
     });
@@ -140,6 +141,42 @@ describe('safe URL state', () => {
     expect(read('0')).toBe(false);
     expect(read('1')).toBe(true);
     expect(read('no')).toBe(true);
+  });
+
+  it('records a tracking direction only for live video object prompts', () => {
+    let state = createInitialState({ example: bedroom });
+    state = appReducer(state, { type: 'setPropagationDirection', value: 'backward' });
+    const textMode = createSafeUrl(
+      safeUrlSettingsFromState(state),
+      new URL('https://playground.test/'),
+    );
+    expect(textMode.searchParams.has('direction')).toBe(false);
+    state = appReducer(state, { type: 'setPromptMode', mode: 'objects' });
+    const objects = createSafeUrl(
+      safeUrlSettingsFromState(state),
+      new URL('https://playground.test/'),
+    );
+    expect(objects.searchParams.get('direction')).toBe('backward');
+    expect(readSafeUrlState(objects).propagationDirection).toBe('backward');
+    const image = appReducer(
+      appReducer(createInitialState({ example: groceries }), {
+        type: 'setPropagationDirection',
+        value: 'forward',
+      }),
+      { type: 'setPromptMode', mode: 'objects' },
+    );
+    expect(
+      createSafeUrl(
+        safeUrlSettingsFromState(image),
+        new URL('https://playground.test/'),
+      ).searchParams.has('direction'),
+    ).toBe(false);
+    const read = (value: string) =>
+      readSafeUrlState(new URL(`https://playground.test/?direction=${value}`))
+        .propagationDirection;
+    expect(read('forward')).toBe('forward');
+    expect(read('both')).toBe('both');
+    expect(read('sideways')).toBe('both');
   });
 
   it('round-trips a live image score threshold and omits it for video and replays', () => {

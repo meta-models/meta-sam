@@ -34,6 +34,8 @@ export interface StreamRequest {
   readonly scoreThreshold?: number;
   /** Ask a live request for the optional `c` confidence. */
   readonly includeConfidence?: boolean;
+  /** Which frames a live video request with object prompts tracks over. */
+  readonly propagationDirection?: 'forward' | 'backward';
   /**
    * Object prompts sent as the input text in place of the noun phrase; see
    * `objectPromptText`.
@@ -343,6 +345,9 @@ export class LiveTransport implements ResponsesTransport {
         throw new Error('A live video request requires an uploaded file handle.');
       }
       body.append('file_id', request.fileId);
+      if (request.propagationDirection !== undefined) {
+        body.append('propagation_direction', request.propagationDirection);
+      }
     } else {
       if (request.media === undefined) {
         throw new Error('A live request requires media bytes.');

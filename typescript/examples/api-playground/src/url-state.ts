@@ -3,7 +3,13 @@
  */
 
 import type { AppState, InspectorTab } from './model';
-import { isScoreThreshold, MAX_PROMPT_LENGTH, MODEL_ID_PATTERN } from './model';
+import type { PropagationDirection } from './model';
+import {
+  isPropagationDirection,
+  isScoreThreshold,
+  MAX_PROMPT_LENGTH,
+  MODEL_ID_PATTERN,
+} from './model';
 
 export interface SafeUrlSettings {
   readonly exampleId: string | null;
@@ -12,6 +18,7 @@ export interface SafeUrlSettings {
   readonly model: string | null;
   readonly scoreThreshold: number | null;
   readonly includeConfidence: boolean;
+  readonly propagationDirection: PropagationDirection;
   readonly showOverlay: boolean;
   readonly inspectorTab: InspectorTab | null;
 }
@@ -27,6 +34,10 @@ function scoreThreshold(value: string | null): number | null {
   if (value === null || !/^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)$/.test(value)) return null;
   const threshold = Number(value);
   return isScoreThreshold(threshold) ? threshold : null;
+}
+
+function direction(value: string | null): PropagationDirection {
+  return value !== 'both' && isPropagationDirection(value) ? value : 'both';
 }
 
 function enabled(value: string | null, fallback: boolean): boolean {
@@ -50,6 +61,7 @@ export function readSafeUrlState(url: URL): SafeUrlSettings {
     model: modelValue !== null && MODEL_ID_PATTERN.test(modelValue) ? modelValue : null,
     scoreThreshold: scoreThreshold(params.get('threshold')),
     includeConfidence: enabled(params.get('confidence'), true),
+    propagationDirection: direction(params.get('direction')),
     showOverlay: enabled(params.get('overlay'), true),
     inspectorTab: tab !== null && inspectorTabs.has(tab) ? (tab as InspectorTab) : null,
   };
@@ -75,6 +87,13 @@ export function safeUrlSettingsFromState(state: AppState): SafeUrlSettings {
     // Only live runs send include_confidence, so only they carry it in the URL.
     includeConfidence:
       state.run.transport === 'live' ? state.request.includeConfidence : true,
+    // Only live video object prompts send a direction, so only they carry it.
+    propagationDirection:
+      state.media.kind === 'video' &&
+      state.run.transport === 'live' &&
+      state.objectPrompts.mode === 'objects'
+        ? state.request.propagationDirection
+        : 'both',
     showOverlay: state.view.showOverlay,
     inspectorTab: state.view.inspectorTab,
   };
@@ -99,6 +118,9 @@ export function createSafeUrl(settings: SafeUrlSettings, current: URL): URL {
     next.searchParams.set('threshold', String(settings.scoreThreshold));
   }
   if (!settings.includeConfidence) next.searchParams.set('confidence', '0');
+  if (settings.propagationDirection !== 'both') {
+    next.searchParams.set('direction', settings.propagationDirection);
+  }
   if (!settings.showOverlay) next.searchParams.set('overlay', '0');
   if (settings.inspectorTab !== null && settings.inspectorTab !== 'objects') {
     next.searchParams.set('panel', settings.inspectorTab);

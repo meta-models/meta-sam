@@ -35,6 +35,9 @@ const PROMPT_FRAME = String.raw`<[0-9]{1,6}f>${PROMPT_SEGMENT}(?:,${PROMPT_SEGME
 export const OBJECT_PROMPT_PATTERN = new RegExp(
   String.raw`^(?:${PROMPT_FRAME}){1,256}$`,
 );
+/** `propagation_direction` is `both`, `forward`, or `backward`. */
+const PROPAGATION_DIRECTIONS = ['both', 'forward', 'backward'] as const;
+const MAX_PROPAGATION_DIRECTION_LENGTH = 8;
 /** `include_confidence` is exactly `true` or `false`. */
 const MAX_INCLUDE_CONFIDENCE_LENGTH = 5;
 /** A plain decimal: digits with an optional fraction, or a fraction alone. */
@@ -51,6 +54,7 @@ const responsesFields = new Set([
   'score_threshold',
   'include_confidence',
   'object_prompt',
+  'propagation_direction',
 ]);
 const MODEL_CACHE_TTL = 5 * 60 * 1_000;
 const MAX_STREAM_SIZE = 64 * 1024 * 1024;
@@ -85,6 +89,7 @@ export type MultipartFields = {
   score_threshold?: string;
   include_confidence?: string;
   object_prompt?: string;
+  propagation_direction?: string;
   media?: MultipartMedia;
 };
 
@@ -94,7 +99,8 @@ type MultipartTextField =
   | 'file_id'
   | 'score_threshold'
   | 'include_confidence'
-  | 'object_prompt';
+  | 'object_prompt'
+  | 'propagation_direction';
 
 export type ValidatedMedia = Readonly<
   | {
@@ -129,6 +135,8 @@ export type VideoRelayInput = Readonly<{
   fileId: string;
   /** Whether to ask for the optional `c` confidence; absent sends nothing. */
   includeConfidence?: boolean;
+  /** Which frames to track object prompts over; absent leaves the API default. */
+  propagationDirection?: (typeof PROPAGATION_DIRECTIONS)[number];
 }>;
 
 export type RelayInput = ImageRelayInput | VideoRelayInput;
@@ -441,6 +449,28 @@ function validateOptionalScoreThreshold(value: unknown): number | undefined {
   return threshold;
 }
 
+function validateOptionalPropagationDirection(
+  value: unknown,
+  isVideoObjectPrompt: boolean,
+): (typeof PROPAGATION_DIRECTIONS)[number] | undefined {
+  if (value === undefined) return undefined;
+  if (!(PROPAGATION_DIRECTIONS as readonly unknown[]).includes(value)) {
+    throw new HttpError(
+      400,
+      'invalid_propagation_direction',
+      'propagation_direction must be "both", "forward", or "backward".',
+    );
+  }
+  if (!isVideoObjectPrompt) {
+    throw new HttpError(
+      400,
+      'invalid_propagation_direction',
+      'propagation_direction applies to video requests with object prompts only.',
+    );
+  }
+  return value as (typeof PROPAGATION_DIRECTIONS)[number];
+}
+
 function validateOptionalIncludeConfidence(value: unknown): boolean | undefined {
   if (value === undefined) return undefined;
   if (value !== 'true' && value !== 'false') {
@@ -529,14 +559,20 @@ export function validateMediaInput(fields: MultipartFields): RelayInput {
         'The score threshold applies to image requests only.',
       );
     }
+    const propagationDirection = validateOptionalPropagationDirection(
+      fields.propagation_direction,
+      fields.object_prompt !== undefined,
+    );
     return Object.freeze({
       prompt,
       ...(model === undefined ? {} : { model }),
       kind: 'video',
       fileId: fields.file_id,
       ...confidence,
+      ...(propagationDirection === undefined ? {} : { propagationDirection }),
     });
   }
+  validateOptionalPropagationDirection(fields.propagation_direction, false);
   const media = validateMediaPart(fields.media);
   if (media.kind === 'video') {
     throw new HttpError(
@@ -720,6 +756,7 @@ export function parseMultipartBody(
         score_threshold: 'invalid_score_threshold',
         include_confidence: 'invalid_include_confidence',
         object_prompt: 'invalid_object_prompt',
+        propagation_direction: 'invalid_propagation_direction',
       }[name];
       const limit = {
         prompt: 4 * MAX_PROMPT_LENGTH,
@@ -728,6 +765,7 @@ export function parseMultipartBody(
         score_threshold: MAX_SCORE_THRESHOLD_LENGTH,
         include_confidence: MAX_INCLUDE_CONFIDENCE_LENGTH,
         object_prompt: MAX_OBJECT_PROMPT_LENGTH,
+        propagation_direction: MAX_PROPAGATION_DIRECTION_LENGTH,
       }[name];
       if (part.filename !== undefined || data.length > limit) {
         throw new HttpError(400, code, `The ${part.name} field is invalid.`);

@@ -773,6 +773,8 @@ test.describe('live relay', () => {
     await page.getByRole('radio', { name: 'Box & points' }).click();
     const overlay = page.getByTestId('prompt-overlay');
     await expect(overlay).toBeVisible();
+    // Images have one frame, so there is no tracking direction to choose.
+    await expect(page.getByRole('radio', { name: 'Forward' })).toHaveCount(0);
     const segment = page.getByRole('button', { name: 'Segment', exact: true });
     await expect(segment).toBeDisabled();
 
@@ -902,9 +904,13 @@ test.describe('live relay', () => {
       await page.mouse.up();
     };
     const promptText = page.getByRole('textbox', { name: 'Prompt text' });
+    const backward = page.getByRole('radio', { name: 'Backward' });
+    await expect(page.getByRole('radio', { name: 'Both' })).toBeChecked();
+    await expect(backward).toBeDisabled();
 
     await goToFrame(30);
     await drag([510, 301], [659, 428]);
+    await expect(backward).toBeEnabled();
     await expect(promptText).toHaveValue(/^<30f>1<\|box;[^|]*w=960;h=540\|>$/);
 
     // The same object on a later frame, then a new object there.
@@ -932,6 +938,10 @@ test.describe('live relay', () => {
     await expect(page.getByTestId('prompt-box')).toHaveCount(1);
 
     const tokens = await promptText.inputValue();
+    await page.getByRole('radio', { name: 'Forward' }).click();
+    await expect(page.getByTestId('tracking-hint')).toContainText(
+      'from the earliest prompt frame to the last frame',
+    );
     await expect(page.getByTestId('upload-status')).toContainText('video ready', {
       timeout: 30_000,
     });
@@ -942,6 +952,7 @@ test.describe('live relay', () => {
       timeout: 30_000,
     });
     expect(body).toContain(`name="object_prompt"\r\n\r\n${tokens}\r\n`);
+    expect(body).toContain('name="propagation_direction"\r\n\r\nforward\r\n');
 
     // Clearing a frame keeps the other frames' prompts.
     await frames.getByRole('button', { name: 'Frame 40' }).click();

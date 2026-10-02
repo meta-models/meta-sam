@@ -76,6 +76,19 @@ describe('code examples', () => {
     );
   });
 
+  it('adds a tracking direction to video examples only', () => {
+    const directed = createCodeExamples({ ...video, propagationDirection: 'forward' });
+    for (const source of [directed.curl, directed.typescript]) {
+      expect(source).toContain('"propagation_direction": "forward"');
+    }
+    expect(createCodeExamples({ ...image, propagationDirection: 'forward' })).toEqual(
+      createCodeExamples(image),
+    );
+    expect(createCodeExamples({ ...video, propagationDirection: null })).toEqual(
+      createCodeExamples(video),
+    );
+  });
+
   it('uses the published package names and real parser APIs', () => {
     for (const example of [createCodeExamples(image), createCodeExamples(video)]) {
       expect(example.typescript).toContain("from '@meta-sam/parser'");

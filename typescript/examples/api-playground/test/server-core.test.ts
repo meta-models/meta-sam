@@ -654,6 +654,58 @@ describe('live server boundary', () => {
     ).toMatchObject({ kind: 'image', media: { mimeType: 'image/png' } });
   });
 
+  it('forwards a tracking direction for video object prompts only', () => {
+    const objectPrompt = '<12f>1<|point;x=1;y=2;w=10;h=10|>';
+    for (const direction of ['both', 'forward', 'backward']) {
+      expect(
+        validateMediaInput({
+          object_prompt: objectPrompt,
+          file_id: 'file-abc123',
+          propagation_direction: direction,
+        }),
+      ).toEqual({
+        prompt: objectPrompt,
+        kind: 'video',
+        fileId: 'file-abc123',
+        propagationDirection: direction,
+      });
+    }
+    const expectCode = (fields: MultipartFields): void => {
+      let caught: unknown;
+      try {
+        validateMediaInput(fields);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ code: 'invalid_propagation_direction' });
+    };
+    expectCode({
+      object_prompt: objectPrompt,
+      file_id: 'file-abc123',
+      propagation_direction: 'sideways',
+    });
+    expectCode({
+      prompt: 'pillow',
+      file_id: 'file-abc123',
+      propagation_direction: 'forward',
+    });
+    expectCode({
+      object_prompt: '<0f>1<|point;x=1;y=2;w=10;h=10|>',
+      media: {
+        bytes: mediaBytes['image/png'],
+        filename: 'a.png',
+        contentType: 'image/png',
+      },
+      propagation_direction: 'forward',
+    });
+    expect(() =>
+      parseMultipartBody(
+        multipart([{ name: 'propagation_direction', data: 'x'.repeat(9) }]),
+        'boundary-test',
+      ),
+    ).toThrow(/propagation_direction field is invalid/);
+  });
+
   it('sends object prompts as the input text and never together with a phrase', () => {
     const boundary = 'boundary-test';
     const tokens =
