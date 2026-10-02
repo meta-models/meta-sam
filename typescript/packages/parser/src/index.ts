@@ -17,6 +17,17 @@ export {
 export { decodeMaskToRLE, decodeMaskToSVGPath } from './mask-conversion.js';
 export type { RLEObject } from './coco-rle.js';
 export { decodeMaskToRaster } from './mask-codec.js';
+export { buildObjectPrompt, ObjectPromptError } from './object-prompt.js';
+export type {
+  BuildObjectPromptOptions,
+  FramePrompt,
+  ObjectPromptErrorCode,
+  PromptBox,
+  PromptObject,
+  PromptPoint,
+  PromptPointLabel,
+  PromptSize,
+} from './object-prompt.js';
 export {
   formats,
   frameIndexOf,

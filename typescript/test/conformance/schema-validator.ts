@@ -8,7 +8,7 @@ export interface SchemaIssue {
   readonly message: string;
 }
 
-type JsonSchema = boolean | { readonly [key: string]: unknown };
+export type JsonSchema = boolean | { readonly [key: string]: unknown };
 
 function pointerSegment(value: string): string {
   return value.replace(/~/g, '~0').replace(/\//g, '~1');

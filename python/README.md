@@ -2,8 +2,8 @@
 
 `meta-sam-parser` is the dependency-free native Python implementation of the
 language-neutral SAM 3 segmentation protocol in the repository root. It provides
-the strict complete-mask raster, COCO RLE, and SVG path conversions, incremental image/video line parser, and async
-Responses API stream adapter.
+the strict complete-mask raster, COCO RLE, and SVG path conversions, incremental image/video line parser, async
+Responses API stream adapter, and a builder for the text of object prompts.
 
 ## Install and use
 
@@ -148,6 +148,71 @@ best-effort basis, and a later `final_result()` reports
 `ResponsesStreamAbortedError` unless source cleanup itself fails. Parser and source
 failures are exception-chained through `__cause__`.
 
+## Object prompts
+
+A request can name objects with a box and points instead of a noun phrase.
+`build_object_prompt` builds that `input_text`: one block per source frame, in the
+token format the API reads. It only formats text; it does not send the request.
+
+```python
+from meta_sam_parser import (
+    FramePrompt,
+    PromptBox,
+    PromptObject,
+    PromptPoint,
+    build_object_prompt,
+)
+
+input_text = build_object_prompt(
+    # The media's (width, height) in pixels, as displayed. Scale coordinates
+    # from your view to this size before building the prompt.
+    size=(640, 480),
+    objects=[
+        PromptObject(
+            id=1,
+            prompts=[
+                # Half-open right and bottom, like a parsed box record.
+                FramePrompt(frame=30, box=PromptBox(10, 20, 40, 60)),
+                FramePrompt(
+                    frame=120,
+                    points=[
+                        PromptPoint(20, 40),  # positive by default
+                        PromptPoint(30, 50, label="negative"),
+                    ],
+                ),
+            ],
+        ),
+        PromptObject(id=2, prompts=[FramePrompt(frame=120, box=PromptBox(5, 5, 30, 30))]),
+    ],
+)
+# <30f>1<|box;x1=10;y1=20;x2=39;y2=59;w=640;h=480|><120f>1<|point;x=20;y=40;w=640;h=480|>
+# -<|point;x=30;y=50;w=640;h=480|>,2<|box;x1=5;y1=5;x2=29;y2=29;w=640;h=480|>
+```
+
+A box names the whole object. A positive point marks part of the object, and a
+negative point marks a region that is not part of it. `frame` defaults to 0, the
+only frame of an image. On a video, the same `id` on another frame prompts the
+same object again there, and a new `id` names a new object; the response reports
+each object under the `id` you gave it. `size` must be the media's width and
+height in pixels, as displayed after any rotation the file specifies; these are the
+`w` and `h` a response reports. When the user draws on a scaled view, convert each
+coordinate to media pixels first: subtract where the displayed media starts in the
+view, scale by the media size over the displayed size, round down, and keep the
+result inside the media, for example
+`max(0, min(width - 1, floor((x - left) * width / shown_width)))`. For a cropped view, see
+"SAM API input" in the protocol. A parsed `SegmentationBoxRecord` can be
+passed as a `box` and its `object_id` as an `id`, with the size of the media it
+came from. Frames come out in ascending order, objects in input order within a
+frame, and each object's box before its points.
+
+`build_object_prompt` raises `ObjectPromptError` with a `code` for input it cannot
+encode, such as a coordinate that is not a non-negative integer, a box or point
+outside `size`, or the same object or frame given twice. The API decides everything
+else, such as how many objects a request may prompt. A request must not combine
+object prompts with a noun phrase. For a video, the request's Responses
+metadata value `propagation_direction` (`both`, `forward`, or `backward`) selects
+which frames the API tracks the objects over.
+
 ## Immutable public model
 
 All public values are frozen, slotted dataclasses. Observable collections are
@@ -177,6 +242,9 @@ tuples. The package root exports:
   `ResponsesStreamSourceError` and `InvalidSegmentationMaskError`.
 - Conversions: `decode_mask_to_raster`, `decode_mask_to_rle`,
   `decode_mask_to_svg_path`, and the frozen, slotted `RLEObject`.
+- Object prompts: `build_object_prompt`, the input dataclasses `PromptObject`,
+  `FramePrompt`, `PromptBox`, and `PromptPoint`, the `PromptBoxLike` protocol,
+  `PromptPointLabel`, `ObjectPromptError`, and `ObjectPromptErrorCode`.
 
 Fields use snake case. A mask identity is the immutable tuple of media,
 `frame_index`, and `object_id`; each later accepted mask for that identity gets

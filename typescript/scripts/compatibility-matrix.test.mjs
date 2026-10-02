@@ -117,6 +117,15 @@ test('a corpus change fails the check with the contract component named', async 
   expect(result.stderr).toContain('contract corpus does not match');
 });
 
+test('an object-prompt corpus change fails the check with the component named', async () => {
+  const root = await copyRepositorySubset();
+  const path = resolve(root, 'conformance/object-prompts/single-box.json');
+  await writeFile(path, `${await readFile(path, 'utf8')}\n`);
+  const result = check(root);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('contract object_prompt_corpus does not match');
+});
+
 test('versioning regenerates and stages the matrix outside the workspace', async () => {
   const { stageCompatibilityMatrix } = await import('./version-packages.mjs');
   const root = await copyRepositorySubset();
