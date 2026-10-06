@@ -337,6 +337,27 @@ describe('LiveTransport', () => {
     expect(calls[1]?.body.get('score_threshold')).toBeNull();
   });
 
+  it('sends object prompts in place of the noun phrase', async () => {
+    const calls = stubFetch(
+      () =>
+        new Response('{"type":"response.completed"}\n', {
+          headers: { 'Content-Type': 'application/x-ndjson' },
+        }),
+    );
+    await drain({
+      fixtureId: null,
+      kind: 'video',
+      prompt: 'pillow',
+      model: 'sam-3.1',
+      fileId: 'file-abc123',
+      objectPrompt: '<3f>1<|point;x=1;y=2;w=10;h=10|>',
+    });
+    expect(calls[0]?.body.get('object_prompt')).toBe(
+      '<3f>1<|point;x=1;y=2;w=10;h=10|>',
+    );
+    expect(calls[0]?.body.get('prompt')).toBeNull();
+  });
+
   it('asks for confidence on image and video requests only when set', async () => {
     const calls = stubFetch(
       () =>

@@ -72,6 +72,14 @@ import {
 import { createCodeExamples, inferMediaMimeType } from './code-examples';
 import { ExampleList } from './ExampleList';
 import { Inspector } from './Inspector';
+import { ObjectPromptPanel } from './ObjectPromptPanel';
+import {
+  objectPromptText,
+  type ObjectPromptAction,
+  type PixelBox,
+  type PromptMode,
+  type PromptPoint,
+} from './object-prompts';
 import { Stage } from './Stage';
 import { findMediaExample, mediaExamples, type MediaExample } from './examples';
 import {
@@ -388,6 +396,11 @@ async function executeRun({
         : (state.media.file ?? (await fetchExampleBlob(state.media.sourceUrl)));
     if (controller.signal.aborted) throw controller.signal.reason;
 
+    const objectPrompt = objectPromptText(
+      state.objectPrompts,
+      state.media.sourceWidth,
+      state.media.sourceHeight,
+    );
     const streamOnce = async (fileId: string | null) => {
       const request: StreamRequest = {
         fixtureId: state.media.origin === 'fixture' ? state.media.id : null,
@@ -408,6 +421,11 @@ async function executeRun({
           : {}),
         ...(state.run.transport === 'live' && state.request.includeConfidence
           ? { includeConfidence: true }
+          : {}),
+        ...(state.run.transport === 'live' &&
+        state.objectPrompts.mode === 'objects' &&
+        objectPrompt !== null
+          ? { objectPrompt }
           : {}),
       };
       const events = tap(transport.stream(request, controller.signal));
@@ -489,6 +507,15 @@ export function App(): React.JSX.Element {
   const [isCodeOpen, setIsCodeOpen] = useState(false);
   const [codeTab, setCodeTab] = useState<CodeTab>('curl');
   const [currentFrame, setCurrentFrame] = useState<number | null>(null);
+  const [seekRequest, setSeekRequest] = useState<{
+    readonly frameIndex: number;
+    readonly nonce: number;
+  } | null>(null);
+  const handleSeekFrame = useCallback(
+    (frameIndex: number) =>
+      setSeekRequest((previous) => ({ frameIndex, nonce: (previous?.nonce ?? 0) + 1 })),
+    [],
+  );
   const [isSelecting, setIsSelecting] = useState(false);
   const isNarrow = useMediaQuery('(max-width: 1100px)');
   const isMobile = useMediaQuery('(max-width: 760px)');
@@ -757,6 +784,33 @@ export function App(): React.JSX.Element {
     },
     [state.renderer.attempt, state.run.runId],
   );
+  // Box and click prompts replace the noun phrase for live media.
+  const usesObjectPrompts = isLiveMedia && state.objectPrompts.mode === 'objects';
+  const objectPrompt = usesObjectPrompts
+    ? objectPromptText(
+        state.objectPrompts,
+        state.media.sourceWidth,
+        state.media.sourceHeight,
+      )
+    : null;
+  const promptReady = usesObjectPrompts
+    ? objectPrompt !== null
+    : state.prompt.text.trim().length > 0;
+  const dispatchObjectPrompt = useCallback(
+    (action: ObjectPromptAction) => dispatch(action),
+    [],
+  );
+  const handlePromptBox = useCallback(
+    (frameIndex: number, box: PixelBox) =>
+      dispatch({ type: 'placePromptBox', frameIndex, box }),
+    [],
+  );
+  const handlePromptPoint = useCallback(
+    (frameIndex: number, point: PromptPoint) =>
+      dispatch({ type: 'placePromptPoint', frameIndex, point }),
+    [],
+  );
+
   const handleMediaMetadata = useCallback(
     (runId: number, width: number, height: number) => {
       dispatch({ type: 'mediaMetadata', runId, width, height });
@@ -770,7 +824,7 @@ export function App(): React.JSX.Element {
     !isSelecting &&
     state.media.kind !== null &&
     state.media.sourceUrl !== null &&
-    state.prompt.text.trim().length > 0 &&
+    promptReady &&
     state.renderer.status === 'ready' &&
     (state.run.transport === 'fixture'
       ? fixture !== undefined
@@ -787,7 +841,7 @@ export function App(): React.JSX.Element {
     return createCodeExamples({
       endpointOrigin: live.endpointOrigin,
       model: currentModel ?? '<model-id>',
-      prompt: state.prompt.text,
+      prompt: usesObjectPrompts ? (objectPrompt ?? '') : state.prompt.text,
       mediaKind: state.media.kind,
       filename,
       mimeType:
@@ -804,6 +858,8 @@ export function App(): React.JSX.Element {
     live.endpointOrigin,
     state.media,
     state.prompt.text,
+    usesObjectPrompts,
+    objectPrompt,
     state.request.includeConfidence,
     state.request.scoreThreshold,
   ]);
@@ -981,16 +1037,42 @@ export function App(): React.JSX.Element {
       </VStack>
 
       <VStack as="section" gap={3}>
-        <TextInput
-          label="Noun phrase"
-          description="Name what to segment, e.g. “red circle”."
-          value={state.prompt.text}
-          isDisabled={isRunning}
-          onChange={(value) => setPrompt(value.slice(0, MAX_PROMPT_LENGTH))}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && canRun) void run();
-          }}
-        />
+        {isLiveMedia ? (
+          <SegmentedControl
+            label="Prompt"
+            size="sm"
+            value={state.objectPrompts.mode}
+            isDisabled={isRunning}
+            onChange={(mode) =>
+              dispatch({ type: 'setPromptMode', mode: mode as PromptMode })
+            }
+          >
+            <SegmentedControlItem value="text" label="Text" />
+            <SegmentedControlItem value="objects" label="Box & points" />
+          </SegmentedControl>
+        ) : null}
+        {usesObjectPrompts && state.media.kind !== null ? (
+          <ObjectPromptPanel
+            prompts={state.objectPrompts}
+            promptText={objectPrompt}
+            mediaKind={state.media.kind}
+            currentFrame={state.media.kind === 'video' ? (currentFrame ?? 0) : 0}
+            isDisabled={isRunning}
+            dispatch={dispatchObjectPrompt}
+            {...(state.media.kind === 'video' ? { onSeekFrame: handleSeekFrame } : {})}
+          />
+        ) : (
+          <TextInput
+            label="Noun phrase"
+            description="Name what to segment, e.g. “red circle”."
+            value={state.prompt.text}
+            isDisabled={isRunning}
+            onChange={(value) => setPrompt(value.slice(0, MAX_PROMPT_LENGTH))}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && canRun) void run();
+            }}
+          />
+        )}
         {isLiveMedia ? (
           <Switch
             label="Include confidence"
@@ -1134,6 +1216,11 @@ export function App(): React.JSX.Element {
       onRendererError={handleRendererError}
       onFrameChange={setCurrentFrame}
       followFrame={followFrame}
+      objectPrompts={usesObjectPrompts ? state.objectPrompts : null}
+      isPromptInteractive={!isRunning}
+      onPromptBox={handlePromptBox}
+      onPromptPoint={handlePromptPoint}
+      seekRequest={seekRequest}
     />
   );
 

@@ -57,6 +57,8 @@ import {
 } from 'react';
 
 import type { MediaState, RunStatus } from './model';
+import type { ObjectPromptState, PixelBox, PromptPoint } from './object-prompts';
+import { PromptOverlay } from './PromptOverlay';
 import { countRender } from './render-counts';
 
 type ImageSnapshot = ImageSegmentationSnapshot | ImageSegmentationResult;
@@ -86,6 +88,14 @@ export interface StageProps {
   readonly onFrameChange?: (frameIndex: number) => void;
   /** While streaming, the newest predicted frame; the paused player follows it. */
   readonly followFrame?: number | null;
+  /** Box and click prompts to draw and edit over the media; `null` hides them. */
+  readonly objectPrompts?: ObjectPromptState | null;
+  /** `false` while a run streams, so prompts cannot change mid-request. */
+  readonly isPromptInteractive?: boolean;
+  readonly onPromptBox?: (frameIndex: number, box: PixelBox) => void;
+  readonly onPromptPoint?: (frameIndex: number, point: PromptPoint) => void;
+  /** Asks the video to show a frame; a new `nonce` repeats the same frame. */
+  readonly seekRequest?: { readonly frameIndex: number; readonly nonce: number } | null;
 }
 
 interface RendererHandle {
@@ -249,6 +259,10 @@ function ImageStage({
   onRendererInitializing,
   onRendererReady,
   onRendererError,
+  objectPrompts,
+  isPromptInteractive,
+  onPromptBox,
+  onPromptPoint,
 }: StageProps): React.JSX.Element {
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -454,6 +468,21 @@ function ImageStage({
           {label}. Use the records panel for a text alternative.
         </canvas>
       )}
+      {objectPrompts === null ||
+      objectPrompts === undefined ||
+      onPromptBox === undefined ||
+      onPromptPoint === undefined ||
+      image === null ? null : (
+        <PromptOverlay
+          prompts={objectPrompts}
+          sourceWidth={sourceWidth}
+          sourceHeight={sourceHeight}
+          frameIndex={0}
+          isInteractive={isPromptInteractive ?? true}
+          onBox={onPromptBox}
+          onPoint={onPromptPoint}
+        />
+      )}
     </div>
   );
 }
@@ -478,6 +507,11 @@ function VideoStage({
   onRendererError,
   onFrameChange,
   followFrame,
+  objectPrompts,
+  isPromptInteractive,
+  onPromptBox,
+  onPromptPoint,
+  seekRequest,
 }: StageProps): React.JSX.Element {
   const frameRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<VideoRef>(null);
@@ -663,6 +697,30 @@ function VideoStage({
     perform(() => videoRef.current?.seekToFrame(exact));
   };
 
+  const handledSeek = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      seekRequest === undefined ||
+      seekRequest === null ||
+      !loaded ||
+      frameCount === 0 ||
+      handledSeek.current === seekRequest.nonce
+    ) {
+      return;
+    }
+    handledSeek.current = seekRequest.nonce;
+    const exact = Math.max(
+      0,
+      Math.min(frameCount - 1, Math.round(seekRequest.frameIndex)),
+    );
+    setCurrentFrame(exact);
+    void Promise.resolve()
+      .then(() => videoRef.current?.seekToFrame(exact))
+      .catch((error: unknown) => {
+        if (!isLifecycleCancellation(error)) handleVideoError(error);
+      });
+  }, [frameCount, handleVideoError, loaded, seekRequest]);
+
   const marks = useMemo(() => {
     if (frameCount === 0 || predictedFrames.size === 0) return undefined;
     const step = Math.max(1, Math.ceil(frameCount / 60));
@@ -726,6 +784,21 @@ function VideoStage({
             </Text>
           </div>
         ) : null}
+        {objectPrompts === null ||
+        objectPrompts === undefined ||
+        onPromptBox === undefined ||
+        onPromptPoint === undefined ||
+        !loaded ? null : (
+          <PromptOverlay
+            prompts={objectPrompts}
+            sourceWidth={media.sourceWidth}
+            sourceHeight={media.sourceHeight}
+            frameIndex={currentFrame}
+            isInteractive={(isPromptInteractive ?? true) && !playing}
+            onBox={onPromptBox}
+            onPoint={onPromptPoint}
+          />
+        )}
       </div>
       <Card width="100%" padding={2}>
         <HStack

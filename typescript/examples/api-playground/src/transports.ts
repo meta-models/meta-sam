@@ -34,6 +34,11 @@ export interface StreamRequest {
   readonly scoreThreshold?: number;
   /** Ask a live request for the optional `c` confidence. */
   readonly includeConfidence?: boolean;
+  /**
+   * Object prompts sent as the input text in place of the noun phrase; see
+   * `objectPromptText`.
+   */
+  readonly objectPrompt?: string;
 }
 
 export interface UploadedFile {
@@ -330,7 +335,8 @@ export class LiveTransport implements ResponsesTransport {
     signal: AbortSignal,
   ): AsyncIterable<ResponsesEvent> {
     const body = new FormData();
-    body.append('prompt', request.prompt);
+    if (request.objectPrompt === undefined) body.append('prompt', request.prompt);
+    else body.append('object_prompt', request.objectPrompt);
     body.append('model', request.model);
     if (request.kind === 'video') {
       if (request.fileId === undefined) {
