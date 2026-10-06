@@ -413,9 +413,10 @@ The build command replaces `dist/` with exactly one wheel and one sdist for the
 version declared in `pyproject.toml`. The audit must pass against those exact
 files; it does not upload, publish, or read credentials.
 
-The Python conformance tests execute all 40 shared cases through
+The Python conformance tests execute all 42 shared parser cases through
 `parse_responses_stream()`, including stream lifecycle failures, completed and
-incomplete outcomes, diagnostics, and masks. From the repository root, `node
+incomplete outcomes, diagnostics, and masks, and all 22 shared object-prompt
+cases through `build_object_prompt()`. From the repository root, `node
 scripts/validate-conformance` runs the same exact normalized cases in both
 languages, while `node scripts/validate` runs complete validation and builds both
 distributions.
