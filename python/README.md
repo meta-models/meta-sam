@@ -192,9 +192,12 @@ line per frame:
 ```
 
 `<Nf>` is the zero-based frame index; frames without a visible object emit no
-line, so indices can skip. Each comma-separated record is a bare integer object
-id - stable for an object across the frames of one response and not a dense
-sequence - followed by one box and one mask. The parser retains the id as a string
+line, so indices can skip. Video lines need not arrive in frame order: a response
+may emit frames forward from one frame to the last and then backward to frame 0,
+and `records` keep output order. Each comma-separated record is a bare integer
+object id - stable for an object across the frames of one response, not a dense
+sequence, and free to skip numbers or start above zero - followed by one box and
+one mask. The parser retains the id as a string
 in `object_id`. Box and mask fields are `;`-separated `key=value` pairs that the
 parser reads by name, so their order does not matter. Whitespace around keys and
 values is trimmed and empty fields are skipped. Unknown keys, unknown tokens, and
@@ -203,8 +206,10 @@ frame header fields are ignored: the record is kept and an `ignored_field` or
 `c`, a missing required field, or a record without exactly one box and one mask
 token makes the record malformed. Box corners and the `w`/`h` frame size are source pixels; the
 inclusive wire `x2`/`y2` become half-open `right`/`bottom`. The optional `c` field
-is the detection confidence, a number from 0 through 1; each token's value becomes
-`confidence` on its `SegmentationBoxRecord` or `SegmentationMaskRecord`. A token
+is the model's confidence for the record, a number from 0 through 1; each token's
+value becomes `confidence` on its `SegmentationBoxRecord` or
+`SegmentationMaskRecord`, and in a video the same object can carry a different
+`c` on each frame. A token
 without `c` gives `confidence=None`, which does not mean zero, and a `c` value that
 is not a number from 0 through 1 is ignored with an `ignored_confidence` warning
 while the box and mask are kept. Ask for `c` by setting the request's Responses
