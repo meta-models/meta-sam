@@ -715,6 +715,52 @@ test.describe('live relay', () => {
     await expect(page.getByRole('switch', { name: /Filter by score/ })).toHaveCount(0);
   });
 
+  test('asks for confidence by default on live runs and records an opt-out', async ({
+    page,
+  }) => {
+    const bodies: string[] = [];
+    await mockLive(page, (request) => {
+      bodies.push(request.postData() ?? '');
+    });
+    await page.goto('/?example=truck');
+    await expect(page.getByText(/configured-model via sam.example.test/)).toBeVisible();
+    const toggle = page.getByRole('switch', { name: /Include confidence/ });
+    await expect(toggle).toBeChecked();
+    await expect(page).not.toHaveURL(/confidence=/);
+
+    await page.getByRole('button', { name: 'Code', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Request code' });
+    await expect(dialog.getByTestId('code-example')).toContainText(
+      '"include_confidence": "true"',
+    );
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+
+    const segment = page.getByRole('button', { name: 'Segment', exact: true });
+    await expect(segment).toBeEnabled();
+    await segment.click();
+    await expect(page.getByTestId('run-status')).toContainText('completed');
+    expect(bodies.at(-1)).toMatch(/name="include_confidence"\r\n\r\ntrue\r\n/);
+
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    await expect(page).toHaveURL(/[?&]confidence=0(&|$)/);
+    await segment.click();
+    await expect(page.getByTestId('run-status')).toContainText('completed');
+    expect(bodies.at(-1)).not.toContain('name="include_confidence"');
+
+    await page.goto('/?example=bedroom&confidence=0');
+    await expect(page.getByText(/configured-model via sam.example.test/)).toBeVisible();
+    await expect(
+      page.getByRole('switch', { name: /Include confidence/ }),
+    ).not.toBeChecked();
+
+    await page.goto('/?fixture=two-objects');
+    await expect(page.getByRole('switch', { name: /Include confidence/ })).toHaveCount(
+      0,
+    );
+  });
+
   test('uploads an example video once and reuses the handle for a second run', async ({
     page,
   }) => {

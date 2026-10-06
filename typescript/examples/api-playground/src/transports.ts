@@ -32,6 +32,8 @@ export interface StreamRequest {
   readonly fileId?: string;
   /** Minimum detection score for a live image request; video ignores it. */
   readonly scoreThreshold?: number;
+  /** Ask a live request for the optional `c` confidence. */
+  readonly includeConfidence?: boolean;
 }
 
 export interface UploadedFile {
@@ -343,6 +345,9 @@ export class LiveTransport implements ResponsesTransport {
       if (request.scoreThreshold !== undefined) {
         body.append('score_threshold', String(request.scoreThreshold));
       }
+    }
+    if (request.includeConfidence !== undefined) {
+      body.append('include_confidence', String(request.includeConfidence));
     }
     const response = await fetch('/api/responses', {
       method: 'POST',

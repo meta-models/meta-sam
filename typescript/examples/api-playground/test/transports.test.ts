@@ -337,6 +337,40 @@ describe('LiveTransport', () => {
     expect(calls[1]?.body.get('score_threshold')).toBeNull();
   });
 
+  it('asks for confidence on image and video requests only when set', async () => {
+    const calls = stubFetch(
+      () =>
+        new Response('{"type":"response.completed"}\n', {
+          headers: { 'Content-Type': 'application/x-ndjson' },
+        }),
+    );
+    const image = {
+      fixtureId: null,
+      kind: 'image' as const,
+      prompt: 'duck',
+      model: 'sam-3.1',
+      media: new Blob(['png'], { type: 'image/png' }),
+      filename: 'duck.png',
+    };
+    const video = {
+      fixtureId: null,
+      kind: 'video' as const,
+      prompt: 'pillow',
+      model: 'sam-3.1',
+      fileId: 'file-abc123',
+    };
+    await drain({ ...image, includeConfidence: true });
+    await drain({ ...video, includeConfidence: true });
+    await drain({ ...image, includeConfidence: false });
+    await drain(video);
+    expect(calls.map((call) => call.body.get('include_confidence'))).toEqual([
+      'true',
+      'true',
+      'false',
+      null,
+    ]);
+  });
+
   it('sends a score threshold with image requests only', async () => {
     const calls = stubFetch(
       () =>

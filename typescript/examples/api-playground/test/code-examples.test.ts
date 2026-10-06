@@ -51,6 +51,31 @@ describe('code examples', () => {
     expect(unset.curl).not.toContain('score_threshold');
   });
 
+  it('asks for confidence in image and video examples only when set', () => {
+    const imageExamples = createCodeExamples({
+      ...image,
+      scoreThreshold: 0.35,
+      includeConfidence: true,
+    });
+    const videoExamples = createCodeExamples({ ...video, includeConfidence: true });
+    for (const source of [
+      imageExamples.curl,
+      imageExamples.typescript,
+      videoExamples.curl,
+      videoExamples.typescript,
+    ]) {
+      expect(source).toContain('"include_confidence": "true"');
+    }
+    expect(imageExamples.curl).toContain('"score_threshold": "0.35"');
+    expect(videoExamples.curl).not.toContain('score_threshold');
+    expect(createCodeExamples({ ...video, includeConfidence: false })).toEqual(
+      createCodeExamples(video),
+    );
+    expect(createCodeExamples({ ...image, includeConfidence: null })).toEqual(
+      createCodeExamples(image),
+    );
+  });
+
   it('uses the published package names and real parser APIs', () => {
     for (const example of [createCodeExamples(image), createCodeExamples(video)]) {
       expect(example.typescript).toContain("from '@meta-sam/parser'");

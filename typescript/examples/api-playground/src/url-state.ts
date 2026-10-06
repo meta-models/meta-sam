@@ -11,6 +11,7 @@ export interface SafeUrlSettings {
   readonly prompt: string | null;
   readonly model: string | null;
   readonly scoreThreshold: number | null;
+  readonly includeConfidence: boolean;
   readonly showOverlay: boolean;
   readonly inspectorTab: InspectorTab | null;
 }
@@ -48,6 +49,7 @@ export function readSafeUrlState(url: URL): SafeUrlSettings {
         : null,
     model: modelValue !== null && MODEL_ID_PATTERN.test(modelValue) ? modelValue : null,
     scoreThreshold: scoreThreshold(params.get('threshold')),
+    includeConfidence: enabled(params.get('confidence'), true),
     showOverlay: enabled(params.get('overlay'), true),
     inspectorTab: tab !== null && inspectorTabs.has(tab) ? (tab as InspectorTab) : null,
   };
@@ -70,6 +72,9 @@ export function safeUrlSettingsFromState(state: AppState): SafeUrlSettings {
       state.media.kind === 'image' && state.run.transport === 'live'
         ? state.request.scoreThreshold
         : null,
+    // Only live runs send include_confidence, so only they carry it in the URL.
+    includeConfidence:
+      state.run.transport === 'live' ? state.request.includeConfidence : true,
     showOverlay: state.view.showOverlay,
     inspectorTab: state.view.inspectorTab,
   };
@@ -93,6 +98,7 @@ export function createSafeUrl(settings: SafeUrlSettings, current: URL): URL {
   if (isScoreThreshold(settings.scoreThreshold)) {
     next.searchParams.set('threshold', String(settings.scoreThreshold));
   }
+  if (!settings.includeConfidence) next.searchParams.set('confidence', '0');
   if (!settings.showOverlay) next.searchParams.set('overlay', '0');
   if (settings.inspectorTab !== null && settings.inspectorTab !== 'objects') {
     next.searchParams.set('panel', settings.inspectorTab);

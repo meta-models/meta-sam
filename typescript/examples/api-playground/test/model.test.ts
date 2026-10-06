@@ -194,7 +194,11 @@ describe('app reducer', () => {
       );
     }
     state = appReducer(state, { type: 'setModel', runId: 1, model: 'alpha-model' });
-    expect(state.request).toEqual({ model: 'alpha-model', scoreThreshold: 0.9 });
+    expect(state.request).toEqual({
+      model: 'alpha-model',
+      scoreThreshold: 0.9,
+      includeConfidence: true,
+    });
     state = appReducer(state, { type: 'runStart', runId: 2 });
     expect(appReducer(state, { type: 'setScoreThreshold', value: 0.2 })).toBe(state);
     state = appReducer(state, {
@@ -205,6 +209,33 @@ describe('app reducer', () => {
     });
     state = appReducer(state, { type: 'setScoreThreshold', value: null });
     expect(state.request.scoreThreshold).toBeNull();
+  });
+
+  it('asks for confidence by default and locks the choice while streaming', () => {
+    expect(createInitialState({ example: bedroom }).request.includeConfidence).toBe(
+      true,
+    );
+    let state = createInitialState({ example: bedroom, includeConfidence: false });
+    expect(state.request.includeConfidence).toBe(false);
+    state = appReducer(state, { type: 'setIncludeConfidence', value: true });
+    expect(state.request.includeConfidence).toBe(true);
+    expect(appReducer(state, { type: 'setIncludeConfidence', value: true })).toBe(
+      state,
+    );
+    state = appReducer(state, { type: 'setModel', runId: 1, model: 'alpha-model' });
+    expect(state.request.includeConfidence).toBe(true);
+    state = appReducer(state, { type: 'runStart', runId: 2 });
+    expect(appReducer(state, { type: 'setIncludeConfidence', value: false })).toBe(
+      state,
+    );
+    state = appReducer(state, {
+      type: 'runTerminal',
+      runId: 2,
+      status: 'cancelled',
+      message: 'cancelled',
+    });
+    state = appReducer(state, { type: 'setIncludeConfidence', value: false });
+    expect(state.request.includeConfidence).toBe(false);
   });
 
   it('keeps the noun phrase a run started with for its labels', () => {

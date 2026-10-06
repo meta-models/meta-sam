@@ -90,6 +90,7 @@ describe('safe URL state', () => {
       prompt: null,
       model: null,
       scoreThreshold: null,
+      includeConfidence: true,
       showOverlay: false,
       inspectorTab: null,
     });
@@ -108,6 +109,37 @@ describe('safe URL state', () => {
     expect(
       readSafeUrlState(new URL('https://playground.test/?model=invalid%20model')).model,
     ).toBeNull();
+  });
+
+  it('records a live opt-out of confidence and ignores it for replays', () => {
+    for (const example of [groceries, bedroom]) {
+      let state = createInitialState({ example });
+      const on = createSafeUrl(
+        safeUrlSettingsFromState(state),
+        new URL('https://playground.test/'),
+      );
+      expect(on.searchParams.has('confidence')).toBe(false);
+      state = appReducer(state, { type: 'setIncludeConfidence', value: false });
+      const off = createSafeUrl(
+        safeUrlSettingsFromState(state),
+        new URL('https://playground.test/'),
+      );
+      expect(off.searchParams.get('confidence')).toBe('0');
+      expect(readSafeUrlState(off).includeConfidence).toBe(false);
+    }
+    const replay = createInitialState({ fixture, includeConfidence: false });
+    expect(
+      createSafeUrl(
+        safeUrlSettingsFromState(replay),
+        new URL('https://playground.test/'),
+      ).searchParams.has('confidence'),
+    ).toBe(false);
+    const read = (value: string) =>
+      readSafeUrlState(new URL(`https://playground.test/?confidence=${value}`))
+        .includeConfidence;
+    expect(read('0')).toBe(false);
+    expect(read('1')).toBe(true);
+    expect(read('no')).toBe(true);
   });
 
   it('round-trips a live image score threshold and omits it for video and replays', () => {
