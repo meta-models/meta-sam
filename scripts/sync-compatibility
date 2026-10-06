@@ -16,7 +16,9 @@ async function main() {
   const [typeScript, python] = matrix.implementations;
   process.stdout.write(
     `wrote ${MATRIX_PATH}: TypeScript ${typeScript.version}, Python ${python.version}, ` +
-      `${matrix.contract.corpus.case_count} cases, ${matrix.contract.identity}\n`,
+      `${matrix.contract.corpus.case_count} cases, ` +
+      `${matrix.contract.object_prompt_corpus.case_count} object-prompt cases, ` +
+      `${matrix.contract.identity}\n`,
   );
 }
 

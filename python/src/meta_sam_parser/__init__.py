@@ -14,6 +14,17 @@ from ._errors import (
 )
 from ._mask_codec import decode_mask_to_raster
 from ._mask_conversion import RLEObject, decode_mask_to_rle, decode_mask_to_svg_path
+from ._object_prompt import (
+    FramePrompt,
+    ObjectPromptError,
+    ObjectPromptErrorCode,
+    PromptBox,
+    PromptBoxLike,
+    PromptObject,
+    PromptPoint,
+    PromptPointLabel,
+    build_object_prompt,
+)
 from ._segmentation import image_segmentation_format, video_segmentation_format
 from ._stream import ParsedResponsesStream, parse_responses_stream
 from ._types import (
@@ -51,15 +62,23 @@ from ._types import (
 __all__ = [
     "CompletedOutcome",
     "DiagnosticSeverity",
+    "FramePrompt",
     "FrameReference",
     "ImageSegmentationResult",
     "ImageSegmentationSnapshot",
     "IncompleteOutcome",
     "IncompleteReason",
     "InvalidSegmentationMaskError",
+    "ObjectPromptError",
+    "ObjectPromptErrorCode",
     "OutputTextLane",
     "ParsedResponsesStream",
     "ParserFinish",
+    "PromptBox",
+    "PromptBoxLike",
+    "PromptObject",
+    "PromptPoint",
+    "PromptPointLabel",
     "RLEObject",
     "ResponseFormat",
     "ResponseFormatParser",
@@ -90,6 +109,7 @@ __all__ = [
     "SegmentationTextRecord",
     "VideoSegmentationResult",
     "VideoSegmentationSnapshot",
+    "build_object_prompt",
     "decode_mask_to_raster",
     "decode_mask_to_rle",
     "decode_mask_to_svg_path",

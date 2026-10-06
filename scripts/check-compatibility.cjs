@@ -20,7 +20,14 @@ async function readJson(path) {
 }
 
 function describeDifference(checkedIn, expected) {
-  const contractKeys = ["protocol", "schema", "corpus", "identity"];
+  const contractKeys = [
+    "protocol",
+    "schema",
+    "corpus",
+    "object_prompt_schema",
+    "object_prompt_corpus",
+    "identity",
+  ];
   for (const key of contractKeys) {
     if (!isDeepStrictEqual(checkedIn.contract?.[key], expected.contract[key])) {
       return `contract ${key} does not match the checked-in ${key === "identity" ? "components" : key}`;
@@ -92,6 +99,7 @@ async function main() {
   process.stdout.write(
     `compatibility: TypeScript ${typeScript.version}, Python ${python.version}, ` +
       `schema ${expected.contract.schema.schema_version}, ${expected.contract.corpus.case_count} cases, ` +
+      `${expected.contract.object_prompt_corpus.case_count} object-prompt cases, ` +
       "protocol unversioned\n",
   );
 }

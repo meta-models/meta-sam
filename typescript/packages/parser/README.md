@@ -1,9 +1,9 @@
 # @meta-sam/parser
 
 `@meta-sam/parser` turns a stream of structural Responses API events into typed,
-immutable SAM 3 image or video segmentation snapshots. It parses response output;
-it does not create requests, choose models, upload media, or depend on an SDK at
-runtime.
+immutable SAM 3 image or video segmentation snapshots. It parses response output
+and builds the text of object prompts; it does not send requests, choose models,
+upload media, or depend on an SDK at runtime.
 
 ## Installation
 
@@ -133,6 +133,73 @@ commands or questions: do not use forms such as `"Segment the person"` or
 `"Which object could clean the table?"`. This constraint comes from the
 [primary SAM 3 paper](https://arxiv.org/abs/2511.16719v2); it belongs to request
 construction rather than parser configuration.
+
+### Object prompts
+
+A request can name objects with a box and points instead of a noun phrase.
+`buildObjectPrompt` builds that `input_text`: one block per source frame, in the
+token format the API reads. It only formats text; it does not send the request.
+
+<!-- readme-example -->
+
+```ts
+import { buildObjectPrompt } from '@meta-sam/parser';
+
+const inputText = buildObjectPrompt({
+  // The media's width and height in pixels, as displayed. Scale coordinates
+  // from your view to this size before building the prompt.
+  size: { width: 640, height: 480 },
+  objects: [
+    {
+      id: 1,
+      prompts: [
+        // Half-open right and bottom, like a parsed box record.
+        { frame: 30, box: { left: 10, top: 20, right: 40, bottom: 60 } },
+        {
+          frame: 120,
+          points: [
+            { x: 20, y: 40 }, // positive by default
+            { x: 30, y: 50, label: 'negative' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 2,
+      prompts: [{ frame: 120, box: { left: 5, top: 5, right: 30, bottom: 30 } }],
+    },
+  ],
+});
+// <30f>1<|box;x1=10;y1=20;x2=39;y2=59;w=640;h=480|><120f>1<|point;x=20;y=40;w=640;h=480|>
+// -<|point;x=30;y=50;w=640;h=480|>,2<|box;x1=5;y1=5;x2=29;y2=29;w=640;h=480|>
+console.log(inputText);
+```
+
+- A box names the whole object. A positive point marks part of the object, and a
+  negative point marks a region that is not part of it.
+- `frame` defaults to 0, the only frame of an image. On a video, the same `id` on
+  another frame prompts the same object again there; a new `id` names a new
+  object. The response reports each object under the `id` you gave it.
+- `size` must be the media's width and height in pixels, as displayed after any
+  rotation the file specifies; these are the `w` and `h` a response reports. When
+  the user draws on a scaled view, convert each coordinate to media pixels first:
+  subtract where the displayed media starts in the view, scale by the media size
+  over the displayed size, round down, and keep the result inside the media, for
+  example `Math.max(0, Math.min(size.width - 1, Math.floor(((x - left) * size.width) / shownWidth)))`.
+  For a cropped view, see "SAM API input" in the protocol.
+- A parsed `SegmentationBoxRecord` can be passed as a `box`, and its `objectId` as
+  an `id`. Pass the size of the media it came from.
+- Frames come out in ascending order, objects in input order within a frame, and
+  each object's box before its points.
+- `buildObjectPrompt` throws `ObjectPromptError` with a `code` for input it cannot
+  encode, such as a coordinate that is not a non-negative integer, a box or point
+  outside `size`, or the same object or frame given twice. The API decides
+  everything else, such as how many objects a request may prompt. A request must
+  not combine object prompts with a noun phrase.
+- For a video, the request's Responses metadata value `propagation_direction`
+  (`both`, `forward`, or `backward`) selects which frames the API tracks the objects
+  over. See "SAM API input" in
+  [`protocol/sam3.md`](https://github.com/meta-models/meta-sam/blob/main/protocol/sam3.md).
 
 ## Snapshots and final results
 
@@ -392,6 +459,8 @@ Only the package root is public; deep imports are not supported.
 | `decodeMaskToRaster`           | Strictly decode one complete validated mask to a binary row-major `Uint8Array`.                       |
 | `decodeMaskToRLE`              | Convert one complete mask to exact COCO compressed RLE.                                               |
 | `decodeMaskToSVGPath`          | Convert one complete mask to an exact polygonal SVG path.                                             |
+| `buildObjectPrompt`            | Build the object-prompt `input_text` for boxes and points on one or more frames.                      |
+| `ObjectPromptError`            | Input `buildObjectPrompt` cannot encode; `code` names the problem.                                    |
 | `ResponsesStreamError`         | Base class for package-specific errors.                                                               |
 | `ResponsesStreamConsumedError` | Invalid repeated or conflicting consumption.                                                          |
 | `ResponsesStreamAbortedError`  | Early snapshot-iteration termination.                                                                 |
@@ -417,6 +486,9 @@ Only the package root is public; deep imports are not supported.
 - Record selection: `SegmentationRecordKind` and
   `SegmentationRecordOfKind<Kind>`, the narrowed record type `recordsOfKind`
   returns.
+- Object prompts: `BuildObjectPromptOptions`, `PromptObject`, `FramePrompt`,
+  `PromptBox`, `PromptPoint`, `PromptPointLabel`, `PromptSize`, and
+  `ObjectPromptErrorCode`.
 
 `ResponseFormat` and `ResponseFormatParser` are public extension points for parsing
 other output-text formats with the same stream lifecycle. A parser receives ordered

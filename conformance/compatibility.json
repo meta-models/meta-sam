@@ -16,20 +16,31 @@
       "digest_algorithm": "sha256 over each sorted UTF-8 filename, NUL, raw file bytes, NUL",
       "sha256": "db5776e10283b229509d7f726d1cb4ed0c39da983e3c94b0f5d48618427d890c"
     },
-    "identity": "sha256:9311a362c910aedf742f6db7a46c0870b93a01086f334241ce4513a0f99b9efc"
+    "object_prompt_schema": {
+      "path": "conformance/object-prompt.schema.json",
+      "schema_version": 1,
+      "sha256": "e186d86681228db7cb194d8e6198d718a8072e9d971cc91387fae57c62ddc15f"
+    },
+    "object_prompt_corpus": {
+      "path": "conformance/object-prompts",
+      "case_count": 22,
+      "digest_algorithm": "sha256 over each sorted UTF-8 filename, NUL, raw file bytes, NUL",
+      "sha256": "7c70a7b23b3bf5c9a33f6aefb376b931e607b90df5c84940ad4ef542205555ef"
+    },
+    "identity": "sha256:df3c61b659fe2d4730853a686c8d3bb00e7c5dc681f29f51203278d285139d1c"
   },
   "implementations": [
     {
       "language": "typescript",
       "distribution": "@meta-sam/parser",
       "version": "0.0.13",
-      "contract_identity": "sha256:9311a362c910aedf742f6db7a46c0870b93a01086f334241ce4513a0f99b9efc"
+      "contract_identity": "sha256:df3c61b659fe2d4730853a686c8d3bb00e7c5dc681f29f51203278d285139d1c"
     },
     {
       "language": "python",
       "distribution": "meta-sam-parser",
-      "version": "0.0.6",
-      "contract_identity": "sha256:9311a362c910aedf742f6db7a46c0870b93a01086f334241ce4513a0f99b9efc"
+      "version": "0.1.0",
+      "contract_identity": "sha256:df3c61b659fe2d4730853a686c8d3bb00e7c5dc681f29f51203278d285139d1c"
     }
   ]
 }

@@ -24,7 +24,7 @@
     "typecheck:browser": "tsc -p test/browser/tsconfig.json",
     "typecheck": "npm run build && npm run typecheck:packages && npm run typecheck:tests && npm run typecheck:browser",
     "test": "npm run build && vitest run",
-    "conformance:check": "vitest run test/conformance/parser.test.ts",
+    "conformance:check": "vitest run test/conformance/parser.test.ts test/conformance/object-prompt.test.ts",
     "test:watch": "vitest",
     "test:browser": "npm run build && npm run fixtures:verify && npm run typecheck:browser && playwright test --grep-invert @performance",
     "test:media-performance": "npm run build && npm run fixtures:verify && npm run typecheck:browser && playwright test test/browser/performance.spec.ts",

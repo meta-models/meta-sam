@@ -11,6 +11,8 @@ const MATRIX_PATH = "conformance/compatibility.json";
 const PROTOCOL_PATH = "protocol/sam3.md";
 const SCHEMA_PATH = "conformance/case.schema.json";
 const CORPUS_PATH = "conformance/cases";
+const PROMPT_SCHEMA_PATH = "conformance/object-prompt.schema.json";
+const PROMPT_CORPUS_PATH = "conformance/object-prompts";
 const CORPUS_DIGEST_ALGORITHM =
   "sha256 over each sorted UTF-8 filename, NUL, raw file bytes, NUL";
 
@@ -43,12 +45,20 @@ async function corpusIdentity(directory) {
   return { count: files.length, sha256: digest.digest("hex") };
 }
 
-function contractIdentity(protocolSha256, schemaSha256, corpusSha256) {
-  return `sha256:${createHash("sha256")
-    .update(Buffer.from(protocolSha256, "hex"))
-    .update(Buffer.from(schemaSha256, "hex"))
-    .update(Buffer.from(corpusSha256, "hex"))
-    .digest("hex")}`;
+function contractIdentity(...componentSha256s) {
+  const digest = createHash("sha256");
+  for (const component of componentSha256s) {
+    digest.update(Buffer.from(component, "hex"));
+  }
+  return `sha256:${digest.digest("hex")}`;
+}
+
+function pinnedSchemaVersion(schema, label) {
+  const schemaVersion = schema.properties?.schema_version?.const;
+  if (!Number.isInteger(schemaVersion)) {
+    throw new Error(`the ${label} must pin an integer schema_version`);
+  }
+  return schemaVersion;
 }
 
 function pythonIdentity(pyproject) {
@@ -62,24 +72,37 @@ function pythonIdentity(pyproject) {
 
 /**
  * Computes the compatibility matrix from the checked-in protocol document,
- * case schema, conformance corpus, and both implementation manifests. The
- * result is the only content `compatibility.json` may hold.
+ * parser case schema and corpus, object-prompt case schema and corpus, and
+ * both implementation manifests. The result is the only content
+ * `compatibility.json` may hold.
  */
 async function computeCompatibilityMatrix(repositoryRoot) {
   const protocolBytes = await readFile(resolve(repositoryRoot, PROTOCOL_PATH));
   const schemaBytes = await readFile(resolve(repositoryRoot, SCHEMA_PATH));
-  const schema = JSON.parse(schemaBytes.toString("utf8"));
-  const schemaVersion = schema.properties?.schema_version?.const;
-  if (!Number.isInteger(schemaVersion)) {
-    throw new Error("the case schema must pin an integer schema_version");
-  }
+  const schemaVersion = pinnedSchemaVersion(
+    JSON.parse(schemaBytes.toString("utf8")),
+    "case schema",
+  );
   const corpus = await corpusIdentity(resolve(repositoryRoot, CORPUS_PATH));
+  const promptSchemaBytes = await readFile(
+    resolve(repositoryRoot, PROMPT_SCHEMA_PATH),
+  );
+  const promptSchemaVersion = pinnedSchemaVersion(
+    JSON.parse(promptSchemaBytes.toString("utf8")),
+    "object-prompt case schema",
+  );
+  const promptCorpus = await corpusIdentity(
+    resolve(repositoryRoot, PROMPT_CORPUS_PATH),
+  );
   const protocolSha256 = sha256(protocolBytes);
   const schemaSha256 = sha256(schemaBytes);
+  const promptSchemaSha256 = sha256(promptSchemaBytes);
   const identity = contractIdentity(
     protocolSha256,
     schemaSha256,
     corpus.sha256,
+    promptSchemaSha256,
+    promptCorpus.sha256,
   );
 
   const parserManifest = await readJson(
@@ -106,6 +129,17 @@ async function computeCompatibilityMatrix(repositoryRoot) {
         case_count: corpus.count,
         digest_algorithm: CORPUS_DIGEST_ALGORITHM,
         sha256: corpus.sha256,
+      },
+      object_prompt_schema: {
+        path: PROMPT_SCHEMA_PATH,
+        schema_version: promptSchemaVersion,
+        sha256: promptSchemaSha256,
+      },
+      object_prompt_corpus: {
+        path: PROMPT_CORPUS_PATH,
+        case_count: promptCorpus.count,
+        digest_algorithm: CORPUS_DIGEST_ALGORITHM,
+        sha256: promptCorpus.sha256,
       },
       identity,
     },
