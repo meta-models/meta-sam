@@ -33,7 +33,7 @@
     {
       "language": "typescript",
       "distribution": "@meta-sam/parser",
-      "version": "0.0.13",
+      "version": "0.1.0",
       "contract_identity": "sha256:df3c61b659fe2d4730853a686c8d3bb00e7c5dc681f29f51203278d285139d1c"
     },
     {

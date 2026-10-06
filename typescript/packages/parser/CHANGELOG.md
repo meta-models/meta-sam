@@ -1,5 +1,17 @@
 # @meta-sam/parser
 
+## 0.1.0
+
+### Minor Changes
+
+- 07b7fdb: Add `buildObjectPrompt`, which builds the object-prompt text a request sends to name objects with a box and positive or negative points, on one or more source frames. It only formats text: it does not send requests. Shared conformance cases pin its exact output in TypeScript and Python.
+
+### Patch Changes
+
+- 6094372: Document that video lines may arrive out of frame order, that object ids may skip numbers or start above zero, and that `c` belongs to one frame's record. Add shared conformance cases for these cases. Parsing behavior is unchanged.
+- 6bfaa17: Document the object prompts a request may send: one block of box and point tokens per source frame, with positive and negative points, and the `propagation_direction` metadata value for video. Parsing behavior is unchanged.
+- 9cce298: Document how to request the optional detection confidence: set the Responses metadata value `include_confidence` to `"true"`. The parser still accepts records without `c`. Parsing behavior is unchanged.
+
 ## 0.0.13
 
 ### Patch Changes
