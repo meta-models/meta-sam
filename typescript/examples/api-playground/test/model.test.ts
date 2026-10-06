@@ -175,6 +175,32 @@ describe('app reducer', () => {
     expect(rerun.media.upload.fileId).toBe('file-abc');
   });
 
+  it('keeps a valid tracking direction and locks it while streaming', () => {
+    let state = createInitialState({ example: bedroom });
+    expect(state.request.propagationDirection).toBe('both');
+    state = appReducer(state, { type: 'setPropagationDirection', value: 'forward' });
+    expect(state.request.propagationDirection).toBe('forward');
+    expect(
+      appReducer(state, {
+        type: 'setPropagationDirection',
+        value: 'sideways' as unknown as 'both',
+      }),
+    ).toBe(state);
+    expect(
+      appReducer(state, { type: 'setPropagationDirection', value: 'forward' }),
+    ).toBe(state);
+    state = appReducer(state, { type: 'runStart', runId: 1 });
+    expect(
+      appReducer(state, { type: 'setPropagationDirection', value: 'backward' }),
+    ).toBe(state);
+    expect(
+      createInitialState({
+        example: bedroom,
+        propagationDirection: 'sideways' as unknown as 'both',
+      }).request.propagationDirection,
+    ).toBe('both');
+  });
+
   it('keeps a valid score threshold across model changes and locks it while streaming', () => {
     const groceries = findMediaExample('groceries')!;
     expect(
@@ -198,6 +224,7 @@ describe('app reducer', () => {
       model: 'alpha-model',
       scoreThreshold: 0.9,
       includeConfidence: true,
+      propagationDirection: 'both',
     });
     state = appReducer(state, { type: 'runStart', runId: 2 });
     expect(appReducer(state, { type: 'setScoreThreshold', value: 0.2 })).toBe(state);

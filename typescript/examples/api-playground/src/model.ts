@@ -32,6 +32,16 @@ export type UploadStatus = 'idle' | 'uploading' | 'ready' | 'failed';
 export type RendererStatus = 'initializing' | 'ready' | 'error';
 
 export const MAX_PROMPT_LENGTH = 160;
+/**
+ * Which frames the API tracks prompted video objects over. `both` is the API's
+ * default and is never sent.
+ */
+export const PROPAGATION_DIRECTIONS = ['both', 'forward', 'backward'] as const;
+export type PropagationDirection = (typeof PROPAGATION_DIRECTIONS)[number];
+
+export function isPropagationDirection(value: unknown): value is PropagationDirection {
+  return (PROPAGATION_DIRECTIONS as readonly unknown[]).includes(value);
+}
 export const MAX_STREAM_ENTRIES = 5_000;
 export const MODEL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,120}$/;
 
@@ -87,6 +97,11 @@ export interface RequestState {
    * `metadata.include_confidence`. Replays never send it.
    */
   readonly includeConfidence: boolean;
+  /**
+   * Which frames live video runs with object prompts track the objects over,
+   * sent as `metadata.propagation_direction` unless it is `both`.
+   */
+  readonly propagationDirection: PropagationDirection;
 }
 
 export interface RunState {
@@ -161,6 +176,7 @@ export interface InitialSettings {
   readonly model?: string;
   readonly scoreThreshold?: number;
   readonly includeConfidence?: boolean;
+  readonly propagationDirection?: PropagationDirection;
   readonly showOverlay?: boolean;
   readonly inspectorTab?: InspectorTab;
 }
@@ -276,6 +292,9 @@ export function createInitialState(settings: InitialSettings = {}): AppState {
         ? settings.scoreThreshold
         : null,
       includeConfidence: settings.includeConfidence ?? true,
+      propagationDirection: isPropagationDirection(settings.propagationDirection)
+        ? settings.propagationDirection
+        : 'both',
     },
     run: {
       runId: 0,
@@ -322,6 +341,7 @@ export type AppAction =
   | { readonly type: 'setModel'; readonly runId: number; readonly model: string }
   | { readonly type: 'setScoreThreshold'; readonly value: number | null }
   | { readonly type: 'setIncludeConfidence'; readonly value: boolean }
+  | { readonly type: 'setPropagationDirection'; readonly value: PropagationDirection }
   | { readonly type: 'setTheme'; readonly theme: ThemeMode }
   | { readonly type: 'mediaUploadStart'; readonly generation: number }
   | {
@@ -531,6 +551,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         request: { ...state.request, includeConfidence: action.value },
+      };
+    case 'setPropagationDirection':
+      if (
+        state.run.status === 'streaming' ||
+        !isPropagationDirection(action.value) ||
+        action.value === state.request.propagationDirection
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        request: { ...state.request, propagationDirection: action.value },
       };
     case 'setTheme':
       return { ...state, view: { ...state.view, theme: action.theme } };

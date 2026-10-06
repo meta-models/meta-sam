@@ -15,6 +15,7 @@ type ModelRequestInput = {
   model?: unknown;
   prompt: string;
   includeConfidence?: boolean;
+  propagationDirection?: string;
 };
 
 type ImageRequestInput = ModelRequestInput & {
@@ -65,7 +66,9 @@ function requestModel(config: ServerConfig, input: ModelRequestInput): string {
 /**
  * Responses metadata is a string-to-string map, so request options travel as
  * strings. `include_confidence` asks the model for the optional `c` field on
- * each box and mask. The object is omitted when no option is set.
+ * each box and mask, and `propagation_direction` selects which video frames
+ * prompted objects are tracked over. The object is omitted when no option is
+ * set.
  */
 function requestMetadata(input: ModelRequestInput & { scoreThreshold?: number }): {
   metadata?: Record<string, string>;
@@ -77,6 +80,9 @@ function requestMetadata(input: ModelRequestInput & { scoreThreshold?: number })
     ...(input.includeConfidence === undefined
       ? {}
       : { include_confidence: String(input.includeConfidence) }),
+    ...(input.propagationDirection === undefined
+      ? {}
+      : { propagation_direction: input.propagationDirection }),
   };
   return Object.keys(metadata).length === 0 ? {} : { metadata };
 }

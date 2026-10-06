@@ -18,6 +18,8 @@ export interface CodeExampleRequest {
   readonly scoreThreshold?: number | null;
   /** Ask for the optional `c` confidence, sent as metadata. */
   readonly includeConfidence?: boolean | null;
+  /** Which frames a video request with object prompts tracks over, sent as metadata. */
+  readonly propagationDirection?: 'forward' | 'backward' | null;
 }
 
 export interface CodeExamples {
@@ -54,6 +56,11 @@ function requestMetadata(
       ? { score_threshold: String(request.scoreThreshold) }
       : {}),
     ...(request.includeConfidence === true ? { include_confidence: 'true' } : {}),
+    ...(request.mediaKind === 'video' &&
+    request.propagationDirection !== undefined &&
+    request.propagationDirection !== null
+      ? { propagation_direction: request.propagationDirection }
+      : {}),
   };
   return Object.keys(metadata).length === 0 ? {} : { metadata };
 }

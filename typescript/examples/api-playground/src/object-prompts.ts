@@ -84,6 +84,19 @@ export function isUsableObject(object: ObjectPrompt): boolean {
   return object.frames.some(hasPositive);
 }
 
+/**
+ * Whether the API can track the prompted objects backward: it needs a usable
+ * prompt on a frame after frame 0, and tracks back from the frame before the
+ * earliest one.
+ */
+export function canTrackBackward(state: ObjectPromptState): boolean {
+  const frames = promptFrames({
+    ...state,
+    objects: state.objects.filter(isUsableObject),
+  });
+  return frames.length > 0 && frames[0]! > 0;
+}
+
 /** The frames that carry at least one prompt, ascending. */
 export function promptFrames(state: ObjectPromptState): readonly number[] {
   const frames = new Set<number>();

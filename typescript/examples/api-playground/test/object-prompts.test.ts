@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   boxFromCorners,
+  canTrackBackward,
   clampPoint,
   describeObjectPrompt,
   initialObjectPrompts,
@@ -124,6 +125,26 @@ describe('object prompts', () => {
       '<0f>1<|box;x1=10;y1=20;x2=40;y2=60;w=640;h=480|>',
     );
     expect(objectPromptText(withEmpty, 0, 480)).toBeNull();
+  });
+
+  it('can track backward only from a usable prompt after frame 0', () => {
+    expect(canTrackBackward(initialObjectPrompts)).toBe(false);
+    expect(
+      canTrackBackward(apply([{ type: 'placePromptBox', frameIndex: 0, box }])),
+    ).toBe(false);
+    expect(
+      canTrackBackward(apply([{ type: 'placePromptBox', frameIndex: 30, box }])),
+    ).toBe(true);
+    const negativeOnFrameZero = apply([
+      { type: 'placePromptBox', frameIndex: 30, box },
+      { type: 'addPromptObject' },
+      {
+        type: 'placePromptPoint',
+        frameIndex: 0,
+        point: { x: 1, y: 1, positive: false },
+      },
+    ]);
+    expect(canTrackBackward(negativeOnFrameZero)).toBe(true);
   });
 
   it('clears one frame, dropping objects left without prompts', () => {

@@ -156,6 +156,17 @@ describe('Model API Responses request', () => {
       ).init.body,
     ) as Record<string, unknown>;
     expect(video.metadata).toEqual({ include_confidence: 'true' });
+    const directed = JSON.parse(
+      buildVideoResponsesRequest(
+        config,
+        {
+          prompt: '<3f>1<|point;x=1;y=2;w=10;h=10|>',
+          propagationDirection: 'backward',
+        },
+        'file-123',
+      ).init.body,
+    ) as Record<string, unknown>;
+    expect(directed.metadata).toEqual({ propagation_direction: 'backward' });
     const plainVideo = JSON.parse(
       buildVideoResponsesRequest(
         config,
