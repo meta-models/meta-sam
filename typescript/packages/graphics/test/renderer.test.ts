@@ -120,6 +120,9 @@ function context() {
     arguments: [number, number, number, number];
     fillStyle: string;
   }> = [];
+  /** The fill style of each mask fill and the stroke style of each box. */
+  const maskFillStyles: string[] = [];
+  const boxStrokeStyles: string[] = [];
   const texts: Array<{
     text: string;
     x: number;
@@ -175,6 +178,7 @@ function context() {
     fill: (path: MockPath2D, rule?: CanvasFillRule) => {
       calls.push({ name: 'fill', arguments: [path, rule] });
       fills.push({ path, globalAlpha: value.globalAlpha });
+      maskFillStyles.push(value.fillStyle);
     },
     stroke: (path: MockPath2D) => {
       calls.push({ name: 'stroke', arguments: [path] });
@@ -191,6 +195,7 @@ function context() {
       const arguments_: [number, number, number, number] = [left, top, width, height];
       calls.push({ name: 'strokeRect', arguments: arguments_ });
       strokeRects.push({ arguments: arguments_, globalAlpha: value.globalAlpha });
+      boxStrokeStyles.push(value.strokeStyle);
     },
   };
   return {
@@ -199,6 +204,8 @@ function context() {
     strokes,
     fills,
     strokeRects,
+    maskFillStyles,
+    boxStrokeStyles,
     fillRects,
     texts,
   };
@@ -1535,5 +1542,162 @@ describe('box labels', () => {
     expect(formatBoxLabel(undefined, '12', 0)).toBe('12 (0.000)');
     expect(formatBoxLabel('   ', '0', 1)).toBe('0 (1.000)');
     expect(formatBoxLabel(undefined, '7', undefined)).toBe('7');
+  });
+});
+
+describe('object colors', () => {
+  const options: SegmentationRenderOptions = {
+    media: 'video',
+    frameIndex: 3,
+    source: { x: 0, y: 0, width: 100, height: 80 },
+    target: { x: 0, y: 0, width: 100, height: 80 },
+  };
+
+  function frameBox(objectId: string, frameIndex: number) {
+    return Object.freeze({
+      kind: 'box' as const,
+      order: 0,
+      objectId,
+      left: 10,
+      top: 20,
+      right: 30,
+      bottom: 40,
+      frame: Object.freeze({ frameIndex }),
+    });
+  }
+
+  function frameMask(objectId: string, frameIndex: number) {
+    return Object.freeze({
+      ...mask(`video:${frameIndex}:${objectId}`, objectId),
+      frame: Object.freeze({ frameIndex }),
+    });
+  }
+
+  const records = snapshot(
+    [
+      frameMask('1', 3),
+      frameBox('1', 3),
+      frameBox('2', 3),
+      frameMask('hidden', 3),
+      frameBox('hidden', 3),
+      frameBox('later', 4),
+    ],
+    'video',
+  );
+
+  it('colors masks, boxes, and labels with the objectColor option', async () => {
+    const asked: string[] = [];
+    const palette: Record<string, string> = { '1': '#112233', '2': 'rgb(1 2 3)' };
+    const renderer = new SegmentationRenderer({
+      boxLabels: true,
+      objectColor: (objectId) => {
+        asked.push(objectId);
+        return palette[objectId] ?? '#000000';
+      },
+    });
+    await renderer.update(records);
+    const canvas = context();
+    renderer.render(canvas.value, { ...options, hiddenIds: ['hidden'] });
+
+    expect(canvas.maskFillStyles).toEqual(['#112233']);
+    expect(canvas.strokes.map((entry) => entry.strokeStyle)).toEqual(['#112233']);
+    expect(canvas.boxStrokeStyles).toEqual(['#112233', 'rgb(1 2 3)']);
+    expect(canvas.fillRects.map((entry) => entry.fillStyle)).toEqual([
+      '#112233',
+      'rgb(1 2 3)',
+    ]);
+    // Label text stays white whatever the object color.
+    expect(canvas.texts.map((entry) => entry.fillStyle)).toEqual([
+      '#ffffff',
+      '#ffffff',
+    ]);
+    // Once per visible object per render: not for hidden or other-frame objects.
+    expect(asked).toEqual(['1', '2']);
+  });
+
+  it('defaults to objectColor and keeps it as the export', async () => {
+    const renderer = new SegmentationRenderer();
+    await renderer.update(records);
+    const canvas = context();
+    renderer.render(canvas.value, options);
+    expect(canvas.boxStrokeStyles).toEqual([
+      objectColor('1'),
+      objectColor('2'),
+      objectColor('hidden'),
+    ]);
+  });
+
+  it('rejects a color option that is not a function', () => {
+    for (const value of ['#fff', ['#fff'], null]) {
+      expect(
+        () =>
+          new SegmentationRenderer({
+            objectColor: value as unknown as (objectId: string) => string,
+          }),
+      ).toThrow(TypeError);
+    }
+  });
+
+  it('asks again on every render', async () => {
+    const asked: string[] = [];
+    const renderer = new SegmentationRenderer({
+      objectColor: (objectId) => {
+        asked.push(objectId);
+        return '#112233';
+      },
+    });
+    await renderer.update(records);
+    renderer.render(context().value, options);
+    renderer.render(context().value, options);
+    expect(asked).toEqual(['1', 'hidden', '2', '1', 'hidden', '2']);
+  });
+
+  it('ignores the color of objects it does not draw', async () => {
+    const renderer = new SegmentationRenderer({
+      objectColor: (objectId) =>
+        objectId === 'hidden' || objectId === 'later' ? '' : '#112233',
+    });
+    await renderer.update(records);
+    const canvas = context();
+    renderer.render(canvas.value, { ...options, hiddenIds: ['hidden'] });
+    expect(canvas.boxStrokeStyles).toEqual(['#112233', '#112233']);
+  });
+
+  it('names the value and the object in the error', async () => {
+    const renderer = new SegmentationRenderer({
+      objectColor: (objectId) => (objectId === '2' ? '  ' : '#112233'),
+    });
+    await renderer.update(records);
+    expect(() => renderer.render(context().value, options)).toThrow(
+      'objectColor must return a non-blank string; it returned "  " for object 2.',
+    );
+  });
+
+  it('leaves the canvas untouched when the callback throws', async () => {
+    const renderer = new SegmentationRenderer({
+      objectColor: (objectId) => {
+        if (objectId === '2') throw new Error('no color');
+        return '#112233';
+      },
+    });
+    await renderer.update(records);
+    const canvas = context();
+    expect(() => renderer.render(canvas.value, options)).toThrow('no color');
+    expect(canvas.calls).toEqual([]);
+  });
+
+  it('draws nothing when a color is blank or not a string', async () => {
+    for (const color of ['', '   ', 7, undefined]) {
+      const renderer = new SegmentationRenderer({
+        objectColor: (objectId) =>
+          (objectId === '2' ? color : '#112233') as unknown as string,
+      });
+      await renderer.update(records);
+      const canvas = context();
+      expect(() => renderer.render(canvas.value, options)).toThrow(
+        expect.objectContaining({ code: 'invalid_render_options' }) as Error,
+      );
+      expect(canvas.calls).toEqual([]);
+    }
   });
 });

@@ -96,6 +96,15 @@ export interface SegmentationRendererOptions {
    * Defaults to `false`.
    */
   readonly boxLabels?: boolean;
+  /**
+   * The color an object's mask fill, mask outline, box, and box label use,
+   * chosen from its `objectId`. The renderer calls it once per visible object per
+   * render. It must return a CSS color string the canvas accepts, with at least
+   * one non-whitespace character, and the same color each time for the same ID.
+   * Defaults to the exported `objectColor`, which hashes the ID to one of eight
+   * colors. Box label text stays white.
+   */
+  readonly objectColor?: (objectId: string) => string;
   /** Traced paths kept in the LRU cache. */
   readonly maxCachedPaths?: number;
   /** Total traced-path characters kept in the LRU cache. */
@@ -240,8 +249,9 @@ function colorFor(identity: string): string {
 }
 
 /**
- * The fill and stroke color the renderer assigns to an object identifier.
- * Exposed so legends and inspectors can match the composited overlay exactly.
+ * The default color the renderer assigns to an object identifier when no
+ * `objectColor` option is given. Exposed so legends and inspectors can match
+ * the composited overlay of such a renderer exactly.
  */
 export function objectColor(objectId: string): string {
   return colorFor(objectId);
@@ -299,6 +309,24 @@ function hiddenSet(
 ): ReadonlySet<string> {
   if (hidden === undefined) return new Set();
   return hidden instanceof Set ? hidden : new Set(hidden);
+}
+
+/**
+ * Whether a render draws an object's mask or box: not hidden, and on the
+ * rendered frame when the media is video.
+ */
+function isVisible(
+  objectId: string,
+  frameIndex: number | undefined,
+  options: SegmentationRenderOptions,
+  hidden: ReadonlySet<string>,
+): boolean {
+  return (
+    !hidden.has(objectId) &&
+    (options.media !== 'video' ||
+      frameIndex === undefined ||
+      frameIndex === options.frameIndex)
+  );
 }
 
 function validateRectangle(rectangle: Rectangle, name: string): void {
@@ -519,6 +547,7 @@ export class SegmentationRenderer {
   readonly #maskFillOpacity: number;
   readonly #outline: OutlineSettings;
   readonly #boxLabels: boolean;
+  readonly #objectColor: (objectId: string) => string;
   readonly #cache = new Map<RetainedMask, CachedPath>();
   #cacheComplexity = 0;
   #state: RetainedState | undefined;
@@ -537,6 +566,13 @@ export class SegmentationRenderer {
       throw new TypeError('boxLabels must be a boolean.');
     }
     this.#boxLabels = options.boxLabels === true;
+    if (
+      options.objectColor !== undefined &&
+      typeof options.objectColor !== 'function'
+    ) {
+      throw new TypeError('objectColor must be a function.');
+    }
+    this.#objectColor = options.objectColor ?? colorFor;
     this.#limits = {
       maxCachedPaths: positiveInteger(options.maxCachedPaths, 128, 'maxCachedPaths'),
       maxCachedComplexity: positiveInteger(
@@ -710,6 +746,9 @@ export class SegmentationRenderer {
     const Constructor = (globalThis as typeof globalThis & { Path2D?: typeof Path2D })
       .Path2D;
     if (Constructor === undefined) throw new Path2DUnavailableError();
+    // Resolve every visible object's color before drawing anything, so a color
+    // callback that fails leaves the canvas untouched.
+    const colors = this.#visibleColors(state, options, hidden);
     const clipPath = new Constructor();
     clipPath.rect(
       options.target.x,
@@ -731,17 +770,12 @@ export class SegmentationRenderer {
       }
 
       for (const mask of state.masks.values()) {
-        if (
-          hidden.has(mask.objectId) ||
-          (options.media === 'video' &&
-            mask.frameIndex !== undefined &&
-            mask.frameIndex !== options.frameIndex)
-        ) {
+        if (!isVisible(mask.objectId, mask.frameIndex, options, hidden)) {
           continue;
         }
         const traced = this.#path(mask);
         if (traced.empty) continue;
-        const color = colorFor(mask.objectId);
+        const color = colors.get(mask.objectId)!;
         context.fillStyle = color;
         // The raster covers the record's box: scale width × height into bounds.
         context.save();
@@ -766,15 +800,10 @@ export class SegmentationRenderer {
         }
       }
       for (const box of state.boxes.values()) {
-        if (
-          hidden.has(box.objectId) ||
-          (options.media === 'video' &&
-            box.frameIndex !== undefined &&
-            box.frameIndex !== options.frameIndex)
-        ) {
+        if (!isVisible(box.objectId, box.frameIndex, options, hidden)) {
           continue;
         }
-        context.strokeStyle = colorFor(box.objectId);
+        context.strokeStyle = colors.get(box.objectId)!;
         context.globalAlpha = 1;
         context.lineWidth =
           2 / Math.max(Math.abs(scaleX), Math.abs(scaleY), Number.MIN_VALUE);
@@ -786,7 +815,7 @@ export class SegmentationRenderer {
         );
       }
       if (this.#boxLabels) {
-        this.#paintBoxLabels(context, state, options, hidden, {
+        this.#paintBoxLabels(context, state, options, hidden, colors, {
           scaleX,
           scaleY,
           offsetX,
@@ -809,6 +838,7 @@ export class SegmentationRenderer {
     state: RetainedState,
     options: SegmentationRenderOptions,
     hidden: ReadonlySet<string>,
+    colors: ReadonlyMap<string, string>,
     transform: {
       readonly scaleX: number;
       readonly scaleY: number;
@@ -834,12 +864,7 @@ export class SegmentationRenderer {
       context.textAlign = 'left';
       context.textBaseline = 'middle';
       for (const box of state.boxes.values()) {
-        if (
-          hidden.has(box.objectId) ||
-          (options.media === 'video' &&
-            box.frameIndex !== undefined &&
-            box.frameIndex !== options.frameIndex)
-        ) {
+        if (!isVisible(box.objectId, box.frameIndex, options, hidden)) {
           continue;
         }
         const text = formatBoxLabel(options.boxLabel, box.objectId, box.confidence);
@@ -848,7 +873,7 @@ export class SegmentationRenderer {
         const top = offsetY + box.top * scaleY;
         const x = Math.max(target.x, Math.min(left, target.x + target.width - width));
         const y = top - BOX_LABEL_HEIGHT >= target.y ? top - BOX_LABEL_HEIGHT : top;
-        context.fillStyle = colorFor(box.objectId);
+        context.fillStyle = colors.get(box.objectId)!;
         context.fillRect(x, y, width, BOX_LABEL_HEIGHT);
         context.fillStyle = BOX_LABEL_TEXT_COLOR;
         context.fillText(text, x + BOX_LABEL_PADDING, y + BOX_LABEL_HEIGHT / 2);
@@ -856,6 +881,35 @@ export class SegmentationRenderer {
     } finally {
       context.restore();
     }
+  }
+
+  /**
+   * The color of every object this render draws, keyed by object ID: one call
+   * to the color option per visible object, in mask then box order.
+   */
+  #visibleColors(
+    state: RetainedState,
+    options: SegmentationRenderOptions,
+    hidden: ReadonlySet<string>,
+  ): ReadonlyMap<string, string> {
+    const colors = new Map<string, string>();
+    const visit = (objectId: string, frameIndex: number | undefined): void => {
+      if (colors.has(objectId) || !isVisible(objectId, frameIndex, options, hidden)) {
+        return;
+      }
+      const color: unknown = this.#objectColor(objectId);
+      if (typeof color !== 'string' || color.trim().length === 0) {
+        const shown = typeof color === 'string' ? JSON.stringify(color) : String(color);
+        throw new InvalidRenderOptionsError(
+          `objectColor must return a non-blank string; ` +
+            `it returned ${shown} for object ${objectId}.`,
+        );
+      }
+      colors.set(objectId, color);
+    };
+    for (const mask of state.masks.values()) visit(mask.objectId, mask.frameIndex);
+    for (const box of state.boxes.values()) visit(box.objectId, box.frameIndex);
+    return colors;
   }
 
   public clear(): void {

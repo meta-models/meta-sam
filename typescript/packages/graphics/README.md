@@ -231,11 +231,20 @@ renderer.render(context, {
 ```
 
 A hidden object contributes neither its mask nor its box, and its mask `Path2D` is
-not created. Colors and geometry are intentionally fixed; fill and outline opacity
-are configurable:
+not created. Geometry is fixed; object colors and the fill and outline opacity are
+configurable:
 
-- Each `objectId` hashes deterministically to one of eight colors; `objectColor(id)`
-  returns the same color so legends can match the overlay.
+- By default each `objectId` hashes deterministically to one of eight colors, and
+  `objectColor(id)` returns the same color so legends can match the overlay.
+- Pass `objectColor: (objectId) => color` to choose the colors yourself. The color
+  is used for the object's mask fill, mask outline, box, and box label fill; the
+  label text stays white. The renderer calls the function once per visible object
+  per render. A legend that calls the same function matches the overlay as long as
+  the function returns the same color for the same ID. It must return a CSS color
+  string the canvas accepts. A value that is not a string with at least one
+  non-whitespace character makes `render()` throw `InvalidRenderOptionsError`
+  before it draws anything. Through `renderVideoFrame()`, the decoded frame has
+  already been drawn when it throws.
 - Every mask is traced once into a marching-squares contour: its vertices are the
   midpoints of the edges between neighbouring pixel centers, so a straight
   boundary follows the pixel edge while corners and diagonals are cut at 45°
@@ -285,8 +294,29 @@ are configurable:
   and boxes from other video frames get no label. Labels are off by default.
   Pass `boxLabel` to `render()` or `renderVideoFrame()`; it must be a string.
 
-The renderer does not mutate records. Object colors, contour geometry, box and
-label styling, draw order, and source transforms are not configurable.
+The renderer does not mutate records. Contour geometry, box and label styling other
+than color, draw order, and source transforms are not configurable.
+
+A palette indexed by object ID gives consecutive IDs different colors, up to the
+palette's length. The hashed default can give two IDs the same color even when there
+are fewer than eight:
+
+<!-- readme-example -->
+
+```ts
+import { SegmentationRenderer } from '@meta-sam/graphics';
+
+const palette = ['#1677ff', '#00a870', '#d46b08', '#c41d7f'];
+
+function colorFor(objectId: string): string {
+  const index = /^\d+$/.test(objectId) ? Number(objectId) : -1;
+  return Number.isSafeInteger(index) && index >= 0
+    ? palette[index % palette.length]!
+    : '#595959';
+}
+
+const renderer = new SegmentationRenderer({ objectColor: colorFor });
+```
 
 ## Lifecycle and transactional behavior
 
@@ -349,6 +379,7 @@ const renderer = new SegmentationRenderer(options);
 | `maskOutline.width`     | `0.003 × min(source.width, source.height)` |
 | `maskOutline.opacity`   | `0.8`                                      |
 | `boxLabels`             | `false`                                    |
+| `objectColor`           | the exported `objectColor`                 |
 | `maxCachedPaths`        | `128`                                      |
 | `maxCachedComplexity`   | `250_000`                                  |
 | `maxRecords`            | `20_000`                                   |
@@ -363,7 +394,7 @@ const renderer = new SegmentationRenderer(options);
 range from `0` through `1`. An outline with opacity `0` remains enabled and is still
 stroked. `maskOutline` also accepts `true`, `false`, or `{ width }`; width is in source
 pixels and must be finite and greater than zero. `boxLabels` must be a
-boolean. Every resource override must be a
+boolean, and `objectColor` must be a function. Every resource override must be a
 positive safe integer. Invalid constructor options throw `TypeError`. Constructor
 settings are resolved once, so later mutation of an options object has no effect.
 Cache limits evict least-recently-used paths. Other resource limits reject an update
@@ -375,19 +406,19 @@ Only the package root is public; deep imports are not supported.
 
 ### Runtime exports
 
-| Export                           | Purpose                                                     |
-| -------------------------------- | ----------------------------------------------------------- |
-| `SegmentationRenderer`           | Retain parser views and render masks and boxes.             |
-| `objectColor`                    | The color assigned to an object ID, for legends and labels. |
-| `formatBoxLabel`                 | The text of one box label, for matching legends.            |
-| `formatConfidence`               | A confidence as box labels show it, for matching legends.   |
-| `SegmentationGraphicsError`      | Base class for package-specific errors.                     |
-| `UnsupportedMaskEncodingError`   | Reject a mask encoding other than `lossless` or `one_bit`.  |
-| `InvalidMaskPayloadError`        | Reject invalid mask data or a conflicting mask revision.    |
-| `SegmentationResourceLimitError` | Reject an update that exceeds a configured resource limit.  |
-| `InvalidRenderOptionsError`      | Reject invalid result, frame, rectangle, or transform data. |
-| `RendererDisposedError`          | Reject operations after permanent disposal.                 |
-| `Path2DUnavailableError`         | Report a missing browser `Path2D` implementation.           |
+| Export                           | Purpose                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| `SegmentationRenderer`           | Retain parser views and render masks and boxes.                           |
+| `objectColor`                    | The default color for an object ID, for legends and labels.               |
+| `formatBoxLabel`                 | The text of one box label, for matching legends.                          |
+| `formatConfidence`               | A confidence as box labels show it, for matching legends.                 |
+| `SegmentationGraphicsError`      | Base class for package-specific errors.                                   |
+| `UnsupportedMaskEncodingError`   | Reject a mask encoding other than `lossless` or `one_bit`.                |
+| `InvalidMaskPayloadError`        | Reject invalid mask data or a conflicting mask revision.                  |
+| `SegmentationResourceLimitError` | Reject an update that exceeds a configured resource limit.                |
+| `InvalidRenderOptionsError`      | Reject invalid result, frame, rectangle, transform, or object color data. |
+| `RendererDisposedError`          | Reject operations after permanent disposal.                               |
+| `Path2DUnavailableError`         | Report a missing browser `Path2D` implementation.                         |
 
 ### Type exports
 
@@ -418,6 +449,8 @@ interface SegmentationRendererOptions {
   readonly maskOutline?: boolean | MaskOutlineOptions;
   /** Draw "<boxLabel> <objectId> (<confidence>)" box labels. Defaults to false. */
   readonly boxLabels?: boolean;
+  /** The color for an object ID. Defaults to the exported objectColor. */
+  readonly objectColor?: (objectId: string) => string;
   // Resource limit options are unchanged.
 }
 ```
