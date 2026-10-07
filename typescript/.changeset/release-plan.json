@@ -2,16 +2,12 @@
   "schemaVersion": 1,
   "packages": [
     {
-      "name": "@meta-sam/parser",
-      "version": "0.1.0"
-    },
-    {
       "name": "@meta-sam/graphics",
-      "version": "0.1.12"
+      "version": "0.1.13"
     },
     {
       "name": "@meta-sam/react",
-      "version": "0.1.13"
+      "version": "0.1.14"
     }
   ]
 }
