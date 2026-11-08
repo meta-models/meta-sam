@@ -25,7 +25,13 @@ from ._object_prompt import (
     PromptPointLabel,
     build_object_prompt,
 )
-from ._segmentation import image_segmentation_format, video_segmentation_format
+from ._segmentation import (
+    image_segmentation_format,
+    parse_image_stream,
+    parse_video_stream,
+    records_of_kind,
+    video_segmentation_format,
+)
 from ._stream import ParsedResponsesStream, parse_responses_stream
 from ._types import (
     CompletedOutcome,
@@ -114,6 +120,9 @@ __all__ = [
     "decode_mask_to_rle",
     "decode_mask_to_svg_path",
     "image_segmentation_format",
+    "parse_image_stream",
     "parse_responses_stream",
+    "parse_video_stream",
+    "records_of_kind",
     "video_segmentation_format",
 ]
