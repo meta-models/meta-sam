@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import AsyncIterable, Iterable
 from dataclasses import dataclass
-from typing import cast
+from typing import Literal, cast, overload
 
 from ._errors import InvalidSegmentationMaskError
 from ._mask_codec import decode_mask_to_raster
+from ._stream import ParsedResponsesStream, parse_responses_stream
 from ._types import (
     FrameReference,
     ImageSegmentationResult,
     ImageSegmentationSnapshot,
     ParserFinish,
     ResponseFormat,
+    ResponsesEventLike,
     ResponseStreamOutcome,
     SegmentationBoxRecord,
     SegmentationDiagnostic,
@@ -601,3 +604,54 @@ def video_segmentation_format() -> ResponseFormat[
         ResponseFormat[VideoSegmentationSnapshot, VideoSegmentationResult],
         _SegmentationFormat("video"),
     )
+
+
+def parse_image_stream(
+    source: AsyncIterable[ResponsesEventLike],
+) -> ParsedResponsesStream[ImageSegmentationSnapshot, ImageSegmentationResult]:
+    """Parse a Responses event stream for an image request.
+
+    Shorthand for ``parse_responses_stream(source, image_segmentation_format())``.
+    """
+
+    return parse_responses_stream(source, image_segmentation_format())
+
+
+def parse_video_stream(
+    source: AsyncIterable[ResponsesEventLike],
+) -> ParsedResponsesStream[VideoSegmentationSnapshot, VideoSegmentationResult]:
+    """Parse a Responses event stream for a video request.
+
+    Shorthand for ``parse_responses_stream(source, video_segmentation_format())``.
+    """
+
+    return parse_responses_stream(source, video_segmentation_format())
+
+
+_RECORD_KINDS = ("text", "box", "mask")
+
+
+@overload
+def records_of_kind(
+    records: Iterable[SegmentationRecord], kind: Literal["text"]
+) -> tuple[SegmentationTextRecord, ...]: ...
+@overload
+def records_of_kind(
+    records: Iterable[SegmentationRecord], kind: Literal["box"]
+) -> tuple[SegmentationBoxRecord, ...]: ...
+@overload
+def records_of_kind(
+    records: Iterable[SegmentationRecord], kind: Literal["mask"]
+) -> tuple[SegmentationMaskRecord, ...]: ...
+def records_of_kind(
+    records: Iterable[SegmentationRecord], kind: str
+) -> tuple[SegmentationRecord, ...]:
+    """Select the records of one kind, in their original order.
+
+    ``kind`` is ``"text"``, ``"box"``, or ``"mask"``; any other value raises
+    ``ValueError``.
+    """
+
+    if kind not in _RECORD_KINDS:
+        raise ValueError(f"Record kind {kind!r} must be 'text', 'box', or 'mask'.")
+    return tuple(record for record in records if record.kind == kind)

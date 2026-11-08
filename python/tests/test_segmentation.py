@@ -139,7 +139,10 @@ def test_public_api_is_root_only_and_complete() -> None:
         "decode_mask_to_rle",
         "decode_mask_to_svg_path",
         "image_segmentation_format",
+        "parse_image_stream",
         "parse_responses_stream",
+        "parse_video_stream",
+        "records_of_kind",
         "video_segmentation_format",
     ]
     assert not hasattr(meta_sam_parser, "SegmentationParser")

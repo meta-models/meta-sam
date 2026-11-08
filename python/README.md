@@ -68,6 +68,21 @@ output-text lane is finalized by either `response.output_text.done` or a
 Model API emits only the latter. If a stream emits both finalizers, their text
 must match.
 
+`parse_image_stream(source)` and `parse_video_stream(source)` are shorthands for
+`parse_responses_stream(source, image_segmentation_format())` and
+`parse_responses_stream(source, video_segmentation_format())`, like
+`parseImageStream` and `parseVideoStream` in `@meta-sam/parser`.
+`records_of_kind(records, kind)` returns the `"text"`, `"box"`, or `"mask"`
+records as a tuple in their original order, like `recordsOfKind`; any other kind
+raises `ValueError`:
+
+```python
+from meta_sam_parser import parse_image_stream, records_of_kind
+
+result = await parse_image_stream(response_events).final_result()
+masks = records_of_kind(result.records, "mask")
+```
+
 ### Iterator-first
 
 Use the parsed stream as both an async iterable and an async context manager. The
@@ -233,6 +248,7 @@ tuples. The package root exports:
 - Format factories: `image_segmentation_format` and
   `video_segmentation_format`.
 - Stream lifecycle: `ParsedResponsesStream`, `parse_responses_stream`,
+  `parse_image_stream`, `parse_video_stream`, `records_of_kind`,
   `ResponsesEvent`, `ResponsesEventLike`, `OutputTextLane`, and
   `ResponseSourceOperation`.
 - Errors: `ResponsesStreamError`, `ResponsesStreamConsumedError`,
